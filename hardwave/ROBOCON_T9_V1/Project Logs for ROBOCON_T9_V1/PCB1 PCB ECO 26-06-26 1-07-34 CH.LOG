@@ -1,0 +1,21 @@
+Removed Pin From Net: NetName=GND Pin=C?-1
+Removed Pin From Net: NetName=+5 Pin=C?-2
+Change Component Footprint: Designator=C? Old Footprint=FP-GRT033-0_03-IPC_B New Footprint=CAPC2013X145X50NL20T20
+Change Component Comment : Designator=C? Old Comment=GRT0335C1E101JA02D New Comment=VJ0805A101GXACW1BC
+Change Managed Component Library Link : Designator=C? Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=D88D70C6-BD29-488B-9F77-E881AFBB85F0 New ItemGUID=CE9570E4-5EC4-4799-B017-CA81CA894792 Old RevisionGUID=FCD30534-661E-4F01-AECC-AFAB4C613073 New RevisionGUID=F3481B8E-5947-4309-A81F-C61AE20B1BBC
+Change component parameters: Designator = "C?" ("C?"); Footprint = "FP-GRT033-0_03-IPC_B"; UniqueID = "\FMVLAYCQ" ("\FMVLAYCQ")
+Change component parameters (AddParameter): Name = "Manufacturer"; Value = "Vitramon"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Part Number"; Value = "VJ0805A101GXACW1BC"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=+5 Pin=C?-1
+Added Pin To Net: NetName=GND Pin=C?-2
+Add Net: Net with name "NetR?_1" already exists
+Add Net: Net with name "NetR?_2" already exists
+Added Member To Class: ClassName=Sheet1 Member=Component C? EEUFM1H151B
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component U? BTS7960B

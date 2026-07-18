@@ -1,0 +1,30 @@
+Removed Member From Class: ClassName=Sheet7 Member=CPU1
+Added Component: Designator=C2(CAPC2113X100X50ML30T10)
+Added Component: Designator=C3(CAPC2113X100X50ML30T10)
+Added Component: Designator=ENC1(FP-PEC11L-4020K-S0020-MFG)
+Added Component: Designator=R9(RESC0805(2012)_L)
+Added Component: Designator=R10(RESC0805(2012)_L)
+Added Component: Designator=R11(RESC0805(2012)_L)
+Add Pin To Net: Unknown Pin: Pin C2-1
+Add Pin To Net: Unknown Pin: Pin C2-2
+Add Pin To Net: Unknown Pin: Pin C3-1
+Add Pin To Net: Unknown Pin: Pin C3-2
+Add Pin To Net: Unknown Pin: Pin ENC1-1
+Add Pin To Net: Unknown Pin: Pin ENC1-2
+Add Pin To Net: Unknown Pin: Pin ENC1-3
+Add Pin To Net: Unknown Pin: Pin ENC1-4
+Add Pin To Net: Unknown Pin: Pin ENC1-A
+Add Pin To Net: Unknown Pin: Pin ENC1-B
+Add Pin To Net: Unknown Pin: Pin ENC1-C
+Add Pin To Net: Unknown Pin: Pin R9-1
+Add Pin To Net: Unknown Pin: Pin R9-2
+Add Pin To Net: Unknown Pin: Pin R10-1
+Add Pin To Net: Unknown Pin: Pin R10-2
+Add Pin To Net: Unknown Pin: Pin R11-1
+Add Pin To Net: Unknown Pin: Pin R11-2
+Add Class Member: Failed to add class member : Component C2 C0805X104K4RACTU
+Add Class Member: Failed to add class member : Component C3 C0805X104K4RACTU
+Add Class Member: Failed to add class member : Component ENC1 PEC11L-4020K-S0020
+Add Class Member: Failed to add class member : Component R9 10K 5% 0805(2012)
+Add Class Member: Failed to add class member : Component R10 10K 5% 0805(2012)
+Add Class Member: Failed to add class member : Component R11 10K 5% 0805(2012)

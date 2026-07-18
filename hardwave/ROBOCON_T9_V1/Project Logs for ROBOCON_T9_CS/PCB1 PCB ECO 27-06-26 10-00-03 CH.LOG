@@ -1,0 +1,220 @@
+Removed Pin From Net: NetName=PMW_CR Pin=R43-2
+Removed Pin From Net: NetName=PMW_FR Pin=R44-2
+Removed Pin From Net: NetName=DIR_C2 Pin=R45-2
+Removed Pin From Net: NetName=DIR_F2 Pin=R46-2
+Removed Pin From Net: NetName=GND Pin=U1-3
+Removed Pin From Net: NetName=GND Pin=U1-5
+Removed Pin From Net: NetName=GND Pin=U1-7
+Removed Pin From Net: NetName=GND Pin=U1-9
+Removed Pin From Net: NetName=GND Pin=U1-19
+Removed Pin From Net: NetName=GND Pin=U2-3
+Removed Pin From Net: NetName=GND Pin=U2-5
+Removed Pin From Net: NetName=GND Pin=U2-7
+Removed Pin From Net: NetName=GND Pin=U2-9
+Removed Pin From Net: NetName=GND Pin=U2-19
+Removed Pin From Net: NetName=GND Pin=U7-3
+Removed Pin From Net: NetName=GND Pin=U7-5
+Removed Pin From Net: NetName=GND Pin=U7-7
+Removed Pin From Net: NetName=GND Pin=U7-9
+Removed Pin From Net: NetName=OUT_B4 Pin=U7-12
+Removed Pin From Net: NetName=OUT_B3 Pin=U7-14
+Removed Pin From Net: NetName=OUT_B2 Pin=U7-16
+Removed Pin From Net: NetName=OUT_B1 Pin=U7-18
+Removed Pin From Net: NetName=GND Pin=U7-19
+Removed Pin From Net: NetName=GND Pin=U8-3
+Removed Pin From Net: NetName=GND Pin=U8-5
+Removed Pin From Net: NetName=GND Pin=U8-7
+Removed Pin From Net: NetName=GND Pin=U8-9
+Removed Pin From Net: NetName=OUT_E4 Pin=U8-12
+Removed Pin From Net: NetName=OUT_E3 Pin=U8-14
+Removed Pin From Net: NetName=OUT_E2 Pin=U8-16
+Removed Pin From Net: NetName=OUT_E1 Pin=U8-18
+Removed Pin From Net: NetName=GND Pin=U8-19
+Removed Pin From Net: NetName=GND Pin=U13-3
+Removed Pin From Net: NetName=PMW_CR Pin=U13-4
+Removed Pin From Net: NetName=GND Pin=U13-5
+Removed Pin From Net: NetName=DIR_C2 Pin=U13-6
+Removed Pin From Net: NetName=GND Pin=U13-7
+Removed Pin From Net: NetName=GND Pin=U13-9
+Removed Pin From Net: NetName=OUT_C4 Pin=U13-12
+Removed Pin From Net: NetName=OUT_C3 Pin=U13-14
+Removed Pin From Net: NetName=OUT_C2 Pin=U13-16
+Removed Pin From Net: NetName=OUT_C1 Pin=U13-18
+Removed Pin From Net: NetName=GND Pin=U13-19
+Removed Pin From Net: NetName=GND Pin=U14-3
+Removed Pin From Net: NetName=PMW_FR Pin=U14-4
+Removed Pin From Net: NetName=GND Pin=U14-5
+Removed Pin From Net: NetName=DIR_F2 Pin=U14-6
+Removed Pin From Net: NetName=GND Pin=U14-7
+Removed Pin From Net: NetName=GND Pin=U14-9
+Removed Pin From Net: NetName=OUT_F4 Pin=U14-12
+Removed Pin From Net: NetName=OUT_F3 Pin=U14-14
+Removed Pin From Net: NetName=OUT_F2 Pin=U14-16
+Removed Pin From Net: NetName=OUT_F1 Pin=U14-18
+Removed Pin From Net: NetName=GND Pin=U14-19
+Change Component Footprint: Designator=U1 Old Footprint=DW0020A_M New Footprint=DW0020A_N
+Change Component Footprint: Designator=U2 Old Footprint=DW0020A_M New Footprint=DW0020A_N
+Change Component Footprint: Designator=U7 Old Footprint=DW0020A_M New Footprint=DW0020A_N
+Change Component Footprint: Designator=U8 Old Footprint=DW0020A_M New Footprint=DW0020A_N
+Change Component Footprint: Designator=U13 Old Footprint=DW0020A_M New Footprint=DW0020A_N
+Change Component Footprint: Designator=U14 Old Footprint=DW0020A_M New Footprint=DW0020A_N
+Change Component Comment : Designator=U1 Old Comment=SN74AHC244DWR New Comment=SN74AHCT244MDWREP
+Change Component Comment : Designator=U2 Old Comment=SN74AHC244DWR New Comment=SN74AHCT244MDWREP
+Change Component Comment : Designator=U7 Old Comment=SN74AHC244DWR New Comment=SN74AHCT244MDWREP
+Change Component Comment : Designator=U8 Old Comment=SN74AHC244DWR New Comment=SN74AHCT244MDWREP
+Change Component Comment : Designator=U13 Old Comment=SN74AHC244DWR New Comment=SN74AHCT244MDWREP
+Change Component Comment : Designator=U14 Old Comment=SN74AHC244DWR New Comment=SN74AHCT244MDWREP
+Change Managed Component Library Link : Designator=U1 Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=3F6D4445-D46B-4F47-839E-6D949D7ED596 New ItemGUID=8D65EF8A-3BDE-4932-9BA8-854923D278E5 Old RevisionGUID=A29B77CE-44B5-4577-86C3-2D3B0D19C7AE New RevisionGUID=FAAF5466-7663-476C-ACBC-85034DB2301C
+Change Managed Component Library Link : Designator=U2 Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=3F6D4445-D46B-4F47-839E-6D949D7ED596 New ItemGUID=8D65EF8A-3BDE-4932-9BA8-854923D278E5 Old RevisionGUID=A29B77CE-44B5-4577-86C3-2D3B0D19C7AE New RevisionGUID=FAAF5466-7663-476C-ACBC-85034DB2301C
+Change Managed Component Library Link : Designator=U7 Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=3F6D4445-D46B-4F47-839E-6D949D7ED596 New ItemGUID=8D65EF8A-3BDE-4932-9BA8-854923D278E5 Old RevisionGUID=A29B77CE-44B5-4577-86C3-2D3B0D19C7AE New RevisionGUID=FAAF5466-7663-476C-ACBC-85034DB2301C
+Change Managed Component Library Link : Designator=U8 Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=3F6D4445-D46B-4F47-839E-6D949D7ED596 New ItemGUID=8D65EF8A-3BDE-4932-9BA8-854923D278E5 Old RevisionGUID=A29B77CE-44B5-4577-86C3-2D3B0D19C7AE New RevisionGUID=FAAF5466-7663-476C-ACBC-85034DB2301C
+Change Managed Component Library Link : Designator=U13 Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=3F6D4445-D46B-4F47-839E-6D949D7ED596 New ItemGUID=8D65EF8A-3BDE-4932-9BA8-854923D278E5 Old RevisionGUID=A29B77CE-44B5-4577-86C3-2D3B0D19C7AE New RevisionGUID=FAAF5466-7663-476C-ACBC-85034DB2301C
+Change Managed Component Library Link : Designator=U14 Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=3F6D4445-D46B-4F47-839E-6D949D7ED596 New ItemGUID=8D65EF8A-3BDE-4932-9BA8-854923D278E5 Old RevisionGUID=A29B77CE-44B5-4577-86C3-2D3B0D19C7AE New RevisionGUID=FAAF5466-7663-476C-ACBC-85034DB2301C
+Change component parameters: Designator = "U1" ("U1"); Footprint = "DW0020A_M"; UniqueID = "\VKKQXWZQ" ("\VKKQXWZQ")
+Change component parameters (AddParameter): Name = "Code_JEDEC"; Value = "MS-013"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "DatasheetVersion"; Value = "SCLS493A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "F @ Nom Voltage(Max)(Mhz)"; Value = "110"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Generic Part Number"; Value = "SN74AHCT244-EP"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "ICC @ Nom Voltage(Max)(mA)"; Value = "0.04"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Input Type"; Value = "TTL"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Manufacturer"; Value = "Texas Instruments"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Operating Temperature Range(C)"; Value = "-55 to 125"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Output Type"; Value = "CMOS"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageReference"; Value = "DW0020A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageVersion"; Value = "http://www.ti.com/lit/ml/mpds173a/mpds173a.pdf"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Rating"; Value = "HiRel Enhanced Product"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "tpd @ Nom Voltage(Max)(ns)"; Value = "9.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Max)(V)"; Value = "5.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Min)(V)"; Value = "4.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Voltage(Nom)(V)"; Value = "5"; VariantName = "[No Variations]"
+Change component parameters: Designator = "U2" ("U2"); Footprint = "DW0020A_M"; UniqueID = "\EDBAFUOP" ("\EDBAFUOP")
+Change component parameters (AddParameter): Name = "Code_JEDEC"; Value = "MS-013"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "DatasheetVersion"; Value = "SCLS493A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "F @ Nom Voltage(Max)(Mhz)"; Value = "110"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Generic Part Number"; Value = "SN74AHCT244-EP"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "ICC @ Nom Voltage(Max)(mA)"; Value = "0.04"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Input Type"; Value = "TTL"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Manufacturer"; Value = "Texas Instruments"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Operating Temperature Range(C)"; Value = "-55 to 125"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Output Type"; Value = "CMOS"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageReference"; Value = "DW0020A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageVersion"; Value = "http://www.ti.com/lit/ml/mpds173a/mpds173a.pdf"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Rating"; Value = "HiRel Enhanced Product"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "tpd @ Nom Voltage(Max)(ns)"; Value = "9.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Max)(V)"; Value = "5.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Min)(V)"; Value = "4.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Voltage(Nom)(V)"; Value = "5"; VariantName = "[No Variations]"
+Change component parameters: Designator = "U7" ("U7"); Footprint = "DW0020A_M"; UniqueID = "\FANXLMJR" ("\FANXLMJR")
+Change component parameters (AddParameter): Name = "Code_JEDEC"; Value = "MS-013"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "DatasheetVersion"; Value = "SCLS493A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "F @ Nom Voltage(Max)(Mhz)"; Value = "110"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Generic Part Number"; Value = "SN74AHCT244-EP"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "ICC @ Nom Voltage(Max)(mA)"; Value = "0.04"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Input Type"; Value = "TTL"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Manufacturer"; Value = "Texas Instruments"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Operating Temperature Range(C)"; Value = "-55 to 125"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Output Type"; Value = "CMOS"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageReference"; Value = "DW0020A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageVersion"; Value = "http://www.ti.com/lit/ml/mpds173a/mpds173a.pdf"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Rating"; Value = "HiRel Enhanced Product"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "tpd @ Nom Voltage(Max)(ns)"; Value = "9.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Max)(V)"; Value = "5.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Min)(V)"; Value = "4.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Voltage(Nom)(V)"; Value = "5"; VariantName = "[No Variations]"
+Change component parameters: Designator = "U8" ("U8"); Footprint = "DW0020A_M"; UniqueID = "\TSAPGVXE" ("\TSAPGVXE")
+Change component parameters (AddParameter): Name = "Code_JEDEC"; Value = "MS-013"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "DatasheetVersion"; Value = "SCLS493A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "F @ Nom Voltage(Max)(Mhz)"; Value = "110"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Generic Part Number"; Value = "SN74AHCT244-EP"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "ICC @ Nom Voltage(Max)(mA)"; Value = "0.04"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Input Type"; Value = "TTL"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Manufacturer"; Value = "Texas Instruments"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Operating Temperature Range(C)"; Value = "-55 to 125"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Output Type"; Value = "CMOS"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageReference"; Value = "DW0020A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageVersion"; Value = "http://www.ti.com/lit/ml/mpds173a/mpds173a.pdf"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Rating"; Value = "HiRel Enhanced Product"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "tpd @ Nom Voltage(Max)(ns)"; Value = "9.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Max)(V)"; Value = "5.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Min)(V)"; Value = "4.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Voltage(Nom)(V)"; Value = "5"; VariantName = "[No Variations]"
+Change component parameters: Designator = "U13" ("U13"); Footprint = "DW0020A_M"; UniqueID = "\WUZQTABC" ("\WUZQTABC")
+Change component parameters (AddParameter): Name = "Code_JEDEC"; Value = "MS-013"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "DatasheetVersion"; Value = "SCLS493A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "F @ Nom Voltage(Max)(Mhz)"; Value = "110"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Generic Part Number"; Value = "SN74AHCT244-EP"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "ICC @ Nom Voltage(Max)(mA)"; Value = "0.04"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Input Type"; Value = "TTL"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Manufacturer"; Value = "Texas Instruments"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Operating Temperature Range(C)"; Value = "-55 to 125"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Output Type"; Value = "CMOS"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageReference"; Value = "DW0020A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageVersion"; Value = "http://www.ti.com/lit/ml/mpds173a/mpds173a.pdf"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Rating"; Value = "HiRel Enhanced Product"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "tpd @ Nom Voltage(Max)(ns)"; Value = "9.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Max)(V)"; Value = "5.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Min)(V)"; Value = "4.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Voltage(Nom)(V)"; Value = "5"; VariantName = "[No Variations]"
+Change component parameters: Designator = "U14" ("U14"); Footprint = "DW0020A_M"; UniqueID = "\DIMCRTXK" ("\DIMCRTXK")
+Change component parameters (AddParameter): Name = "Code_JEDEC"; Value = "MS-013"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "DatasheetVersion"; Value = "SCLS493A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "F @ Nom Voltage(Max)(Mhz)"; Value = "110"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Generic Part Number"; Value = "SN74AHCT244-EP"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "ICC @ Nom Voltage(Max)(mA)"; Value = "0.04"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Input Type"; Value = "TTL"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Manufacturer"; Value = "Texas Instruments"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Operating Temperature Range(C)"; Value = "-55 to 125"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Output Type"; Value = "CMOS"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageReference"; Value = "DW0020A"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "PackageVersion"; Value = "http://www.ti.com/lit/ml/mpds173a/mpds173a.pdf"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Rating"; Value = "HiRel Enhanced Product"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "tpd @ Nom Voltage(Max)(ns)"; Value = "9.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Max)(V)"; Value = "5.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "VCC(Min)(V)"; Value = "4.5"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Voltage(Nom)(V)"; Value = "5"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=PMW_FR Pin=R42-2
+Added Pin To Net: NetName=DIR_F2 Pin=R44-2
+Added Pin To Net: NetName=PMW_CR Pin=R45-2
+Added Pin To Net: NetName=DIR_C2 Pin=R47-2
+Added Pin To Net: NetName=+5 Pin=U1-19
+Added Pin To Net: NetName=+5 Pin=U2-19
+Added Pin To Net: NetName=OUT_E4 Pin=U7-12
+Added Pin To Net: NetName=OUT_E3 Pin=U7-14
+Added Pin To Net: NetName=OUT_E2 Pin=U7-16
+Added Pin To Net: NetName=OUT_E1 Pin=U7-18
+Added Pin To Net: NetName=+5 Pin=U7-19
+Added Pin To Net: NetName=OUT_B4 Pin=U8-12
+Added Pin To Net: NetName=OUT_B3 Pin=U8-14
+Added Pin To Net: NetName=OUT_B2 Pin=U8-16
+Added Pin To Net: NetName=OUT_B1 Pin=U8-18
+Added Pin To Net: NetName=+5 Pin=U8-19
+Added Pin To Net: NetName=PMW_FR Pin=U13-4
+Added Pin To Net: NetName=DIR_F2 Pin=U13-6
+Added Pin To Net: NetName=OUT_F4 Pin=U13-12
+Added Pin To Net: NetName=OUT_F3 Pin=U13-14
+Added Pin To Net: NetName=OUT_F2 Pin=U13-16
+Added Pin To Net: NetName=OUT_F1 Pin=U13-18
+Added Pin To Net: NetName=+5 Pin=U13-19
+Added Pin To Net: NetName=PMW_CR Pin=U14-4
+Added Pin To Net: NetName=DIR_C2 Pin=U14-6
+Added Pin To Net: NetName=OUT_C4 Pin=U14-12
+Added Pin To Net: NetName=OUT_C3 Pin=U14-14
+Added Pin To Net: NetName=OUT_C2 Pin=U14-16
+Added Pin To Net: NetName=OUT_C1 Pin=U14-18
+Added Pin To Net: NetName=+5 Pin=U14-19
+Change Net Name : Old Net Name=DIR_B1 New Net Name=DIR_E1
+Change Net Name : Old Net Name=DIR_B2 New Net Name=DIR_E2
+Change Net Name : Old Net Name=DIR_C1 New Net Name=DIR_F1
+Change Net Name : Old Net Name=DIR_E1 New Net Name=DIR_B1
+Change Net Name : Old Net Name=DIR_E2 New Net Name=DIR_B2
+Change Net Name : Old Net Name=PMW_BL New Net Name=PMW_EL
+Change Net Name : Old Net Name=PMW_BR New Net Name=PMW_ER
+Change Net Name : Old Net Name=PMW_EL New Net Name=PMW_BL
+Change Net Name : Old Net Name=PMW_ER New Net Name=PMW_BR
+Change Net Name : Old Net Name=PMW_FL New Net Name=PMW_CL
+Added Pin To Net: NetName=DIR_C1 Pin=R43-2
+Added Pin To Net: NetName=DIR_C1 Pin=U14-2
+Added Net: Name=DIR_C1
+Added Pin To Net: NetName=PMW_FL Pin=R46-2
+Added Pin To Net: NetName=PMW_FL Pin=U13-8
+Added Net: Name=PMW_FL

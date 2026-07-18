@@ -1,0 +1,92 @@
+Change Component Designator: OldDesignator=D? NewDesignator=D18
+Change Component Designator: OldDesignator=D? NewDesignator=D19
+Change Component Designator: OldDesignator=D? NewDesignator=D20
+Change Component Designator: OldDesignator=D? NewDesignator=D21
+Change Component Designator: OldDesignator=D? NewDesignator=D22
+Change Component Designator: OldDesignator=D? NewDesignator=D23
+Change Component Designator: OldDesignator=D? NewDesignator=D24
+Change Component Designator: OldDesignator=D? NewDesignator=D25
+Change Component Designator: OldDesignator=D? NewDesignator=D26
+Change Component Designator: OldDesignator=D? NewDesignator=D27
+Change Component Designator: OldDesignator=D? NewDesignator=D28
+Change Component Designator: OldDesignator=D? NewDesignator=D29
+Change Component Designator: OldDesignator=R? NewDesignator=R71
+Change Component Designator: OldDesignator=R? NewDesignator=R72
+Change Component Designator: OldDesignator=R? NewDesignator=R73
+Change Component Designator: OldDesignator=R? NewDesignator=R74
+Change Component Designator: OldDesignator=R? NewDesignator=R75
+Change Component Designator: OldDesignator=R? NewDesignator=R76
+Change Component Designator: OldDesignator=R? NewDesignator=R77
+Change Component Designator: OldDesignator=R? NewDesignator=R78
+Change Component Designator: OldDesignator=R? NewDesignator=R79
+Change Component Designator: OldDesignator=R? NewDesignator=R80
+Change Component Designator: OldDesignator=R? NewDesignator=R81
+Change Component Designator: OldDesignator=R? NewDesignator=R82
+Change Net Name : Old Net Name=NetD?_1 New Net Name=NetD23_1
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD18_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD19_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD20_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD21_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD22_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD23_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD24_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD25_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD26_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD27_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD28_2
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD29_2
+Added Pin To Net: NetName=NetD18_1 Pin=D18-1
+Added Pin To Net: NetName=NetD18_1 Pin=R71-2
+Added Net: Name=NetD18_1
+Added Pin To Net: NetName=NetD19_1 Pin=D19-1
+Added Pin To Net: NetName=NetD19_1 Pin=R72-1
+Added Net: Name=NetD19_1
+Added Pin To Net: NetName=NetD20_1 Pin=D20-1
+Added Pin To Net: NetName=NetD20_1 Pin=R73-2
+Added Net: Name=NetD20_1
+Added Pin To Net: NetName=NetD21_1 Pin=D21-1
+Added Pin To Net: NetName=NetD21_1 Pin=R74-1
+Added Net: Name=NetD21_1
+Added Pin To Net: NetName=NetD22_1 Pin=D22-1
+Added Pin To Net: NetName=NetD22_1 Pin=R75-2
+Added Net: Name=NetD22_1
+Added Pin To Net: NetName=NetD24_1 Pin=D24-1
+Added Pin To Net: NetName=NetD24_1 Pin=R77-2
+Added Net: Name=NetD24_1
+Added Pin To Net: NetName=NetD25_1 Pin=D25-1
+Added Pin To Net: NetName=NetD25_1 Pin=R78-1
+Added Net: Name=NetD25_1
+Added Pin To Net: NetName=NetD26_1 Pin=D26-1
+Added Pin To Net: NetName=NetD26_1 Pin=R79-2
+Added Net: Name=NetD26_1
+Added Pin To Net: NetName=NetD27_1 Pin=D27-1
+Added Pin To Net: NetName=NetD27_1 Pin=R80-1
+Added Net: Name=NetD27_1
+Added Pin To Net: NetName=NetD28_1 Pin=D28-1
+Added Pin To Net: NetName=NetD28_1 Pin=R81-2
+Added Net: Name=NetD28_1
+Added Pin To Net: NetName=NetD29_1 Pin=D29-1
+Added Pin To Net: NetName=NetD29_1 Pin=R82-1
+Added Net: Name=NetD29_1
+Added Member To Class: ClassName=Sheet1 Member=Component D18 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D20 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D21 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D22 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D23 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D24 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D25 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D26 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D27 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D28 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D29 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component R71 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R72 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R73 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R74 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R75 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R76 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R77 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R78 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R79 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R80 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R82 CRCW08051K00FKTC

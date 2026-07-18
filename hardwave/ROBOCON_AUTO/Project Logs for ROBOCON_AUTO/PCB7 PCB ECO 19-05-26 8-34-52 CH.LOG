@@ -1,0 +1,42 @@
+Removed Pin From Net: NetName=RX Pin=ESP1-27
+Removed Pin From Net: NetName=TX Pin=ESP1-28
+Added Component: Designator=C?(CAPC2113X100X50ML30T10)
+Added Component: Designator=C?(CAPC2113X100X50ML30T10)
+Added Component: Designator=ENC?(FP-PEC11L-4020K-S0020-MFG)
+Added Component: Designator=R?(RESC0805(2012)_L)
+Added Component: Designator=R?(RESC0805(2012)_L)
+Added Component: Designator=R?(RESC0805(2012)_L)
+Add Component: Footprint Not Found SOIC127P1030X265-16N
+Add Pin To Net: Unknown Pin: Pin C?-1
+Add Pin To Net: Unknown Pin: Pin C?-1
+Add Pin To Net: Unknown Pin: Pin C?-2
+Add Pin To Net: Unknown Pin: Pin C?-2
+Add Pin To Net: Unknown Pin: Pin ENC?-1
+Add Pin To Net: Unknown Pin: Pin ENC?-2
+Add Pin To Net: Unknown Pin: Pin ENC?-3
+Add Pin To Net: Unknown Pin: Pin ENC?-4
+Add Pin To Net: Unknown Pin: Pin ENC?-A
+Add Pin To Net: Unknown Pin: Pin ENC?-B
+Add Pin To Net: Unknown Pin: Pin ENC?-C
+Added Pin To Net: NetName=RX Pin=ESP1-21
+Added Pin To Net: NetName=TX Pin=ESP1-22
+Add Pin To Net: Unknown Pin: Pin R?-1
+Add Pin To Net: Unknown Pin: Pin R?-1
+Add Pin To Net: Unknown Pin: Pin R?-1
+Add Pin To Net: Unknown Pin: Pin R?-2
+Add Pin To Net: Unknown Pin: Pin R?-2
+Add Pin To Net: Unknown Pin: Pin R?-2
+Add Pin To Net: Unknown Pin: Pin U?-1
+Add Pin To Net: Unknown Pin: Pin U?-2
+Add Pin To Net: Unknown Pin: Pin U?-3
+Add Pin To Net: Unknown Pin: Pin U?-8
+Add Pin To Net: Unknown Pin: Pin U?-14
+Add Pin To Net: Unknown Pin: Pin U?-15
+Added Net: Name=3.3
+Add Class Member: Failed to add class member : Component C? C0805X104K4RACTU
+Add Class Member: Failed to add class member : Component C? C0805X104K4RACTU
+Add Class Member: Failed to add class member : Component ENC? PEC11L-4020K-S0020
+Add Class Member: Failed to add class member : Component R? 10K 5% 0805(2012)
+Add Class Member: Failed to add class member : Component R? 10K 5% 0805(2012)
+Add Class Member: Failed to add class member : Component R? 10K 5% 0805(2012)
+Add Class Member: Failed to add class member : Component U? PCF8574DW

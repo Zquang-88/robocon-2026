@@ -1,0 +1,17 @@
+Change Component Designator: OldDesignator=C? NewDesignator=C2
+Change Component Designator: OldDesignator=C? NewDesignator=C3
+Change Component Designator: OldDesignator=ENC? NewDesignator=ENC1
+Change Component Designator: OldDesignator=LS? NewDesignator=LS1
+Change Component Designator: OldDesignator=Q? NewDesignator=Q1
+Change Component Designator: OldDesignator=R? NewDesignator=R9
+Change Component Designator: OldDesignator=R? NewDesignator=R10
+Change Component Designator: OldDesignator=R? NewDesignator=R11
+Change Component Designator: OldDesignator=R? NewDesignator=R12
+Change Component Designator: OldDesignator=U? NewDesignator=U1
+Added Pin To Net: NetName=INTERRUT_B Pin=ESP1-7
+Change Net Name : Old Net Name=NetLS?_1 New Net Name=NetLS1_1
+Change Net Name : Old Net Name=NetQ?_3 New Net Name=NetQ1_3
+Added Member To Class: ClassName=Sheet7 Member=Component C2 C0805X104K4RACTU
+Added Member To Class: ClassName=Sheet7 Member=Component R10 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R11 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R12 10k

@@ -1,0 +1,122 @@
+Added Component: Designator=C?(FP-RAD-TH-D_10_0_5-L_12_5-MFG)
+Add component (AddParameter): Name = "Capacitance"; Value = "150uF"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Case/Package"; Value = "Radial"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Contact Plating"; Value = "Tin"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Diameter"; Value = "10mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Dissipation Factor"; Value = "0.1%"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "ESR (Equivalent Series Resistance)"; Value = "42mR"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Height"; Value = "12.5mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Height - Seated (Max)"; Value = "0.551inch"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Impedance"; Value = "42mR"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lead Diameter"; Value = "0.6mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lead Free"; Value = "Lead Free"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lead Pitch"; Value = "5mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Length"; Value = "12.5mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Life (Hours)"; Value = "4000Hour"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Operating Temperature"; Value = "105°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Min Operating Temperature"; Value = "-40°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Mount"; Value = "Through Hole"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Package Quantity"; Value = "500"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Packaging"; Value = "Ammo Pack"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Polarity"; Value = "Polar"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Radiation Hardening"; Value = "No"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Ripple Current"; Value = "1.17A"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "RoHS Compliant"; Value = "Yes"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Series"; Value = "FM"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Termination"; Value = "Radial"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Tolerance"; Value = "20%"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Voltage Rating"; Value = "50V"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Voltage Rating (DC)"; Value = "50V"; VariantName = "[No Variations]"
+Added Component: Designator=C?(FP-GRT033-0_03-IPC_B)
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=GND Pin=C?-1
+Added Pin To Net: NetName=GND Pin=C?-1
+Added Pin To Net: NetName=+12 Pin=C?-2
+Added Pin To Net: NetName=GND Pin=R?-1
+Added Pin To Net: NetName=GND Pin=R?-1
+Added Pin To Net: NetName=GND Pin=R?-1
+Added Pin To Net: NetName=GND Pin=R?-1
+Added Pin To Net: NetName=GND Pin=R?-1
+Added Pin To Net: NetName=GND Pin=R?-1
+Added Pin To Net: NetName=GND Pin=R?-2
+Added Pin To Net: NetName=GND Pin=R?-2
+Added Pin To Net: NetName=GND Pin=U1-1
+Added Pin To Net: NetName=GND Pin=U1-3
+Added Pin To Net: NetName=GND Pin=U1-5
+Added Pin To Net: NetName=GND Pin=U1-7
+Added Pin To Net: NetName=GND Pin=U1-9
+Added Pin To Net: NetName=GND Pin=U1-10
+Added Pin To Net: NetName=GND Pin=U1-11
+Added Pin To Net: NetName=GND Pin=U1-13
+Added Pin To Net: NetName=GND Pin=U1-15
+Added Pin To Net: NetName=GND Pin=U1-17
+Added Pin To Net: NetName=GND Pin=U1-19
+Added Pin To Net: NetName=+5 Pin=C?-2
+Added Pin To Net: NetName=+5 Pin=U1-20
+Added Net: Name=+5
+Added Pin To Net: NetName=DIR_A1 Pin=R?-2
+Added Pin To Net: NetName=DIR_A1 Pin=U1-2
+Added Net: Name=DIR_A1
+Added Pin To Net: NetName=DIR_A2 Pin=R?-2
+Added Pin To Net: NetName=DIR_A2 Pin=U1-6
+Added Net: Name=DIR_A2
+Added Pin To Net: NetName=NetR?_1 Pin=R?-1
+Added Pin To Net: NetName=NetR?_1 Pin=U?-5
+Added Net: Name=NetR?_1
+Add Net: Net with name "NetR?_1" already exists
+Added Pin To Net: NetName=NetR?_2 Pin=R?-2
+Added Pin To Net: NetName=NetR?_2 Pin=U?-6
+Added Net: Name=NetR?_2
+Add Net: Net with name "NetR?_2" already exists
+Added Pin To Net: NetName=OUT_A1 Pin=U1-18
+Added Pin To Net: NetName=OUT_A1 Pin=U?-2
+Added Net: Name=OUT_A1
+Added Pin To Net: NetName=OUT_A2 Pin=U1-16
+Added Pin To Net: NetName=OUT_A2 Pin=U?-3
+Added Net: Name=OUT_A2
+Added Pin To Net: NetName=OUT_A3 Pin=U1-14
+Added Pin To Net: NetName=OUT_A3 Pin=U?-2
+Added Net: Name=OUT_A3
+Added Pin To Net: NetName=OUT_A4 Pin=U1-12
+Added Pin To Net: NetName=OUT_A4 Pin=U?-3
+Added Net: Name=OUT_A4
+Added Pin To Net: NetName=PMW_AR Pin=R?-2
+Added Pin To Net: NetName=PMW_AR Pin=R?-2
+Added Pin To Net: NetName=PMW_AR Pin=U1-4
+Added Pin To Net: NetName=PMW_AR Pin=U1-8
+Added Net: Name=PMW_AR
+Added Member To Class: ClassName=Sheet1 Member=Component C? EEUFM1H151B
+Added Member To Class: ClassName=Sheet1 Member=Component C? GRT0335C1E101JA02D
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component U1 SN74AHC244DWR
+Added Member To Class: ClassName=Sheet1 Member=Component U? BTS7960B

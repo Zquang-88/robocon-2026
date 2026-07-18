@@ -1,0 +1,52 @@
+Added Component: Designator=U?(DW16_L)
+Add component (AddParameter): Name = "# of I/Os"; Value = "8"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Code_JEDEC"; Value = "MS-013-AA"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "ComponentLink1Description"; Value = "Datasheet"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "ComponentLink1URL"; Value = "http://www.ti.com/general/docs/lit/getliterature.tsp?genericPartNumber=PCF8574&fileType=pdf"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "ComponentLink2Description"; Value = "Package Specification"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "ComponentLink2URL"; Value = "http://www.ti.com/litv/pdf/msoi003g"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "DatasheetVersion"; Value = "SCPS068G"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Eco-Plan"; Value = "Green (RoHS & no Sb/Br)"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "fSCLK(Max)(MHz)"; Value = "0.1"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "I2C Address"; Value = "0100 xxx"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Interrupt Output"; Value = "Yes"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer"; Value = "Texas Instruments"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Frequency(kHz)"; Value = "100"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Mounting Technology"; Value = "Surface Mount"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "PackageDescription"; Value = "16-Pin Small Outline Integrated Circuit, 10.3 x 7.5 mm, Pitch 1.27 mm Pitch"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "PackageReference"; Value = "DW16"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "PackageVersion"; Value = "revG, Jan-2011"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "PartNumber"; Value = "PCF8574DWRE4"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Push-Pull I/O Type"; Value = "Yes"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Reset Input"; Value = "No"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "SubFamily"; Value = "I2C IO Expander"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Vcc range(V)"; Value = "2.5 to 6.0"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "VCC(Max)(V)"; Value = "6"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "VCC(Min)(V)"; Value = "2.5"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Voltage Nodes(V)"; Value = "5, 3.3"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=GND Pin=U?-1
+Added Pin To Net: NetName=+5 Pin=U?-2
+Added Pin To Net: NetName=GND Pin=U?-3
+Added Pin To Net: NetName=SW_ROTARY Pin=U?-4
+Added Pin To Net: NetName=CHA_ROTARY Pin=U?-5
+Added Pin To Net: NetName=CHB_ROTARY Pin=U?-6
+Added Pin To Net: NetName=GND Pin=U?-8
+Added Pin To Net: NetName=SCL Pin=U?-14
+Added Pin To Net: NetName=SDA Pin=U?-15
+Added Pin To Net: NetName=+5 Pin=U?-16
+Added Pin To Net: NetName=INTERRUT_B Pin=U?-13
+Added Net: Name=INTERRUT_B
+Added Pin To Net: NetName=PIN+BUZZER Pin=U?-11
+Added Net: Name=PIN+BUZZER
+Added Pin To Net: NetName=PIN_LEDA Pin=U?-7
+Added Net: Name=PIN_LEDA
+Added Pin To Net: NetName=PIN_LEDB Pin=U?-9
+Added Net: Name=PIN_LEDB
+Added Pin To Net: NetName=PIN_LEDC Pin=U?-10
+Added Net: Name=PIN_LEDC
+Added Pin To Net: NetName=SW_INH Pin=U?-12
+Added Net: Name=SW_INH
+Added Member To Class: ClassName=Sheet7 Member=Component C? C0805X104K4RACTU
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component U? PCF8574DWRE4

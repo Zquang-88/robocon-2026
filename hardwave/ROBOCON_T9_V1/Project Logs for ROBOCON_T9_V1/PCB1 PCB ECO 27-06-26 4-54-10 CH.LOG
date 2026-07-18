@@ -1,0 +1,267 @@
+Change Component Designator: OldDesignator=C? NewDesignator=C13
+Change Component Designator: OldDesignator=C? NewDesignator=C14
+Change Component Designator: OldDesignator=C? NewDesignator=C15
+Change Component Designator: OldDesignator=C? NewDesignator=C16
+Change Component Designator: OldDesignator=C? NewDesignator=C17
+Change Component Designator: OldDesignator=C? NewDesignator=C18
+Change Component Designator: OldDesignator=D? NewDesignator=D1
+Change Component Designator: OldDesignator=D? NewDesignator=D2
+Change Component Designator: OldDesignator=D? NewDesignator=D3
+Change Component Designator: OldDesignator=D? NewDesignator=D4
+Change Component Designator: OldDesignator=D? NewDesignator=D5
+Change Component Designator: OldDesignator=D? NewDesignator=D6
+Change Component Designator: OldDesignator=D? NewDesignator=D7
+Change Component Designator: OldDesignator=D? NewDesignator=D8
+Change Component Designator: OldDesignator=D? NewDesignator=D9
+Change Component Designator: OldDesignator=D? NewDesignator=D10
+Change Component Designator: OldDesignator=D? NewDesignator=D11
+Change Component Designator: OldDesignator=D? NewDesignator=D12
+Change Component Designator: OldDesignator=D? NewDesignator=D13
+Change Component Designator: OldDesignator=D? NewDesignator=D14
+Change Component Designator: OldDesignator=D? NewDesignator=D15
+Change Component Designator: OldDesignator=D? NewDesignator=D16
+Change Component Designator: OldDesignator=D? NewDesignator=D17
+Change Component Designator: OldDesignator=K? NewDesignator=K1
+Change Component Designator: OldDesignator=K? NewDesignator=K2
+Change Component Designator: OldDesignator=K? NewDesignator=K3
+Change Component Designator: OldDesignator=K? NewDesignator=K4
+Change Component Designator: OldDesignator=K? NewDesignator=K5
+Change Component Designator: OldDesignator=K? NewDesignator=K6
+Change Component Designator: OldDesignator=L? NewDesignator=L1
+Change Component Designator: OldDesignator=L? NewDesignator=L2
+Change Component Designator: OldDesignator=Q? NewDesignator=Q1
+Change Component Designator: OldDesignator=Q? NewDesignator=Q2
+Change Component Designator: OldDesignator=Q? NewDesignator=Q3
+Change Component Designator: OldDesignator=Q? NewDesignator=Q4
+Change Component Designator: OldDesignator=Q? NewDesignator=Q5
+Change Component Designator: OldDesignator=Q? NewDesignator=Q6
+Change Component Designator: OldDesignator=R? NewDesignator=R49
+Change Component Designator: OldDesignator=R? NewDesignator=R50
+Change Component Designator: OldDesignator=R? NewDesignator=R51
+Change Component Designator: OldDesignator=R? NewDesignator=R52
+Change Component Designator: OldDesignator=R? NewDesignator=R53
+Change Component Designator: OldDesignator=R? NewDesignator=R54
+Change Component Designator: OldDesignator=R? NewDesignator=R55
+Change Component Designator: OldDesignator=R? NewDesignator=R56
+Change Component Designator: OldDesignator=R? NewDesignator=R57
+Change Component Designator: OldDesignator=R? NewDesignator=R58
+Change Component Designator: OldDesignator=R? NewDesignator=R59
+Change Component Designator: OldDesignator=R? NewDesignator=R60
+Change Component Designator: OldDesignator=R? NewDesignator=R61
+Change Component Designator: OldDesignator=R? NewDesignator=R62
+Change Component Designator: OldDesignator=R? NewDesignator=R63
+Change Component Designator: OldDesignator=R? NewDesignator=R64
+Change Component Designator: OldDesignator=R? NewDesignator=R65
+Change Component Designator: OldDesignator=R? NewDesignator=R66
+Change Component Designator: OldDesignator=R? NewDesignator=R67
+Change Component Designator: OldDesignator=R? NewDesignator=R68
+Change Component Designator: OldDesignator=R? NewDesignator=R69
+Change Component Designator: OldDesignator=R? NewDesignator=R70
+Change Component Designator: OldDesignator=T? NewDesignator=T1
+Change Component Designator: OldDesignator=T? NewDesignator=T2
+Change Component Designator: OldDesignator=U? NewDesignator=U19
+Change Component Designator: OldDesignator=U? NewDesignator=U20
+Change Component Designator: OldDesignator=U? NewDesignator=U21
+Change Component Designator: OldDesignator=U? NewDesignator=U22
+Change Component Designator: OldDesignator=U? NewDesignator=U23
+Change Component Designator: OldDesignator=U? NewDesignator=U24
+Change Component Designator: OldDesignator=U? NewDesignator=U25
+Change Component Designator: OldDesignator=U? NewDesignator=U26
+Change Net Name : Old Net Name=NetD?_1 New Net Name=NetD15_1
+Change Net Name : Old Net Name=NetD?_2 New Net Name=NetD1_2
+Change Net Name : Old Net Name=NetQ?_3 New Net Name=NetQ1_3
+Change Net Name : Old Net Name=NetR?_2 New Net Name=NetR51_2
+Added Pin To Net: NetName=NetD1_1 Pin=D1-1
+Added Pin To Net: NetName=NetD1_1 Pin=K1-1
+Added Net: Name=NetD1_1
+Added Pin To Net: NetName=NetD2_1 Pin=D2-1
+Added Pin To Net: NetName=NetD2_1 Pin=U19-2
+Added Net: Name=NetD2_1
+Added Pin To Net: NetName=NetD2_2 Pin=D2-2
+Added Pin To Net: NetName=NetD2_2 Pin=R49-2
+Added Net: Name=NetD2_2
+Added Pin To Net: NetName=NetD3_1 Pin=D3-1
+Added Pin To Net: NetName=NetD3_1 Pin=K2-1
+Added Net: Name=NetD3_1
+Added Pin To Net: NetName=NetD3_2 Pin=D3-2
+Added Pin To Net: NetName=NetD3_2 Pin=K2-13
+Added Pin To Net: NetName=NetD3_2 Pin=Q2-2
+Added Net: Name=NetD3_2
+Added Pin To Net: NetName=NetD4_1 Pin=D4-1
+Added Pin To Net: NetName=NetD4_1 Pin=U20-2
+Added Net: Name=NetD4_1
+Added Pin To Net: NetName=NetD4_2 Pin=D4-2
+Added Pin To Net: NetName=NetD4_2 Pin=R52-2
+Added Net: Name=NetD4_2
+Added Pin To Net: NetName=NetD5_1 Pin=D5-1
+Added Pin To Net: NetName=NetD5_1 Pin=K3-1
+Added Net: Name=NetD5_1
+Added Pin To Net: NetName=NetD5_2 Pin=D5-2
+Added Pin To Net: NetName=NetD5_2 Pin=K3-13
+Added Pin To Net: NetName=NetD5_2 Pin=Q3-2
+Added Net: Name=NetD5_2
+Added Pin To Net: NetName=NetD6_1 Pin=D6-1
+Added Pin To Net: NetName=NetD6_1 Pin=U21-2
+Added Net: Name=NetD6_1
+Added Pin To Net: NetName=NetD6_2 Pin=D6-2
+Added Pin To Net: NetName=NetD6_2 Pin=R55-2
+Added Net: Name=NetD6_2
+Added Pin To Net: NetName=NetD8_1 Pin=D8-1
+Added Pin To Net: NetName=NetD8_1 Pin=K4-1
+Added Net: Name=NetD8_1
+Added Pin To Net: NetName=NetD8_2 Pin=D8-2
+Added Pin To Net: NetName=NetD8_2 Pin=K4-13
+Added Pin To Net: NetName=NetD8_2 Pin=Q4-2
+Added Net: Name=NetD8_2
+Added Pin To Net: NetName=NetD9_1 Pin=D9-1
+Added Pin To Net: NetName=NetD9_1 Pin=U22-2
+Added Net: Name=NetD9_1
+Added Pin To Net: NetName=NetD9_2 Pin=D9-2
+Added Pin To Net: NetName=NetD9_2 Pin=R58-2
+Added Net: Name=NetD9_2
+Added Pin To Net: NetName=NetD10_1 Pin=D10-1
+Added Pin To Net: NetName=NetD10_1 Pin=K5-1
+Added Net: Name=NetD10_1
+Added Pin To Net: NetName=NetD10_2 Pin=D10-2
+Added Pin To Net: NetName=NetD10_2 Pin=K5-13
+Added Pin To Net: NetName=NetD10_2 Pin=Q5-2
+Added Net: Name=NetD10_2
+Added Pin To Net: NetName=NetD11_1 Pin=D11-1
+Added Pin To Net: NetName=NetD11_1 Pin=U23-2
+Added Net: Name=NetD11_1
+Added Pin To Net: NetName=NetD11_2 Pin=D11-2
+Added Pin To Net: NetName=NetD11_2 Pin=R61-2
+Added Net: Name=NetD11_2
+Added Pin To Net: NetName=NetD12_1 Pin=D12-1
+Added Pin To Net: NetName=NetD12_1 Pin=K6-1
+Added Net: Name=NetD12_1
+Added Pin To Net: NetName=NetD12_2 Pin=D12-2
+Added Pin To Net: NetName=NetD12_2 Pin=K6-13
+Added Pin To Net: NetName=NetD12_2 Pin=Q6-2
+Added Net: Name=NetD12_2
+Added Pin To Net: NetName=NetD13_1 Pin=D13-1
+Added Pin To Net: NetName=NetD13_1 Pin=U24-2
+Added Net: Name=NetD13_1
+Added Pin To Net: NetName=NetD13_2 Pin=D13-2
+Added Pin To Net: NetName=NetD13_2 Pin=R64-2
+Added Net: Name=NetD13_2
+Added Pin To Net: NetName=NetD14_1 Pin=D14-1
+Added Pin To Net: NetName=NetD14_1 Pin=L1-1
+Added Pin To Net: NetName=NetD14_1 Pin=U25-2
+Added Net: Name=NetD14_1
+Added Pin To Net: NetName=NetD16_2 Pin=D16-2
+Added Pin To Net: NetName=NetD16_2 Pin=R67-1
+Added Net: Name=NetD16_2
+Added Pin To Net: NetName=NetD17_2 Pin=D17-2
+Added Pin To Net: NetName=NetD17_2 Pin=R68-1
+Added Net: Name=NetD17_2
+Added Pin To Net: NetName=NetQ2_3 Pin=Q2-3
+Added Pin To Net: NetName=NetQ2_3 Pin=R54-1
+Added Net: Name=NetQ2_3
+Added Pin To Net: NetName=NetQ3_3 Pin=Q3-3
+Added Pin To Net: NetName=NetQ3_3 Pin=R57-1
+Added Net: Name=NetQ3_3
+Added Pin To Net: NetName=NetQ4_3 Pin=Q4-3
+Added Pin To Net: NetName=NetQ4_3 Pin=R60-1
+Added Net: Name=NetQ4_3
+Added Pin To Net: NetName=NetQ5_3 Pin=Q5-3
+Added Pin To Net: NetName=NetQ5_3 Pin=R63-1
+Added Net: Name=NetQ5_3
+Added Pin To Net: NetName=NetQ6_3 Pin=Q6-3
+Added Pin To Net: NetName=NetQ6_3 Pin=R66-1
+Added Net: Name=NetQ6_3
+Added Pin To Net: NetName=NetR50_2 Pin=R50-2
+Added Pin To Net: NetName=NetR50_2 Pin=U19-1
+Added Net: Name=NetR50_2
+Added Pin To Net: NetName=NetR53_2 Pin=R53-2
+Added Pin To Net: NetName=NetR53_2 Pin=U20-1
+Added Net: Name=NetR53_2
+Added Pin To Net: NetName=NetR54_2 Pin=R54-2
+Added Pin To Net: NetName=NetR54_2 Pin=U20-3
+Added Net: Name=NetR54_2
+Added Pin To Net: NetName=NetR56_2 Pin=R56-2
+Added Pin To Net: NetName=NetR56_2 Pin=U21-1
+Added Net: Name=NetR56_2
+Added Pin To Net: NetName=NetR57_2 Pin=R57-2
+Added Pin To Net: NetName=NetR57_2 Pin=U21-3
+Added Net: Name=NetR57_2
+Added Pin To Net: NetName=NetR59_2 Pin=R59-2
+Added Pin To Net: NetName=NetR59_2 Pin=U22-1
+Added Net: Name=NetR59_2
+Added Pin To Net: NetName=NetR60_2 Pin=R60-2
+Added Pin To Net: NetName=NetR60_2 Pin=U22-3
+Added Net: Name=NetR60_2
+Added Pin To Net: NetName=NetR62_2 Pin=R62-2
+Added Pin To Net: NetName=NetR62_2 Pin=U23-1
+Added Net: Name=NetR62_2
+Added Pin To Net: NetName=NetR63_2 Pin=R63-2
+Added Pin To Net: NetName=NetR63_2 Pin=U23-3
+Added Net: Name=NetR63_2
+Added Pin To Net: NetName=NetR65_2 Pin=R65-2
+Added Pin To Net: NetName=NetR65_2 Pin=U24-1
+Added Net: Name=NetR65_2
+Added Pin To Net: NetName=NetR66_2 Pin=R66-2
+Added Pin To Net: NetName=NetR66_2 Pin=U24-3
+Added Net: Name=NetR66_2
+Added Member To Class: ClassName=Sheet1 Member=Component C14 16SEPC100MW
+Added Member To Class: ClassName=Sheet1 Member=Component C15 VJ0805Y105KXQRW1BC
+Added Member To Class: ClassName=Sheet1 Member=Component C16 VJ0805Y105KXQRW1BC
+Added Member To Class: ClassName=Sheet1 Member=Component C17 VJ0805Y105KXQRW1BC
+Added Member To Class: ClassName=Sheet1 Member=Component C18 VJ0805Y105KXQRW1BC
+Added Member To Class: ClassName=Sheet1 Member=Component D1 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D2 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D3 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D4 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D6 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D7 8P
+Added Member To Class: ClassName=Sheet1 Member=Component D8 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D9 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D10 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D11 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D12 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D13 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D14 SS34LWHRVG
+Added Member To Class: ClassName=Sheet1 Member=Component D15 SS34LWHRVG
+Added Member To Class: ClassName=Sheet1 Member=Component D16 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D17 APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component K1 G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K2 G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K4 G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K5 G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K6 G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component L1 B1047AS-470M=P3
+Added Member To Class: ClassName=Sheet1 Member=Component L2 B1047AS-470M=P3
+Added Member To Class: ClassName=Sheet1 Member=Component Q1 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q2 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q4 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q5 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q6 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component R49 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R50 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R51 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R52 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R53 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R54 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R55 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R56 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R57 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R58 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R59 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R61 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R62 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R63 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R64 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R65 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R66 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R67 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R68 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R69 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R70 CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component T2 10K
+Added Member To Class: ClassName=Sheet1 Member=Component U19 PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U21 PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U22 PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U23 PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U24 PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U25 LM2596SX-12/NOPB
+Added Member To Class: ClassName=Sheet1 Member=Component U26 LM2596SX-12/NOPB

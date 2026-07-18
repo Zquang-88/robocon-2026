@@ -1,0 +1,13 @@
+Removed Pin From Net: NetName=OUT_A4 Pin=U13-12
+Removed Pin From Net: NetName=OUT_A3 Pin=U13-14
+Removed Pin From Net: NetName=OUT_A2 Pin=U13-16
+Removed Pin From Net: NetName=OUT_A1 Pin=U13-18
+Added Pin To Net: NetName=OUT_C4 Pin=U13-12
+Added Pin To Net: NetName=OUT_C3 Pin=U13-14
+Added Pin To Net: NetName=OUT_C2 Pin=U13-16
+Added Pin To Net: NetName=OUT_C1 Pin=U13-18
+Added Member To Class: ClassName=Sheet1 Member=Component C13 16SEPC100MW
+Added Member To Class: ClassName=Sheet1 Member=Component D5 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component K3 G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component Q3 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component R60 CRCW08051K00FKTC

@@ -1,0 +1,9 @@
+Removed Member From Class: ClassName=Sheet7 Member=CPU?
+Add Component: Footprint Not Found DSB 9-F
+Added Member To Class: ClassName=Sheet7 Member=Component C? C0805X104K4RACTU
+Added Member To Class: ClassName=Sheet7 Member=Component H? XH-2.54-6P
+Added Member To Class: ClassName=Sheet7 Member=Component KF? 4P
+Added Member To Class: ClassName=Sheet7 Member=Component KF? 4P
+Add Class Member: Failed to add class member : Component P? Hed 10
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)

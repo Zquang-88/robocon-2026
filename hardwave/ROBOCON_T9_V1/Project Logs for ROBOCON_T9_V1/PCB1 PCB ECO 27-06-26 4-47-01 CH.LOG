@@ -1,0 +1,198 @@
+Change Component Footprint: Designator=D? Old Footprint=FP-425AB-MFG New Footprint=FP-APT3216LSECK-J4-PRV-MFG
+Change Component Footprint: Designator=D? Old Footprint=FP-425AB-MFG New Footprint=FP-SS34LWH-MFG
+Change Component Comment : Designator=D? Old Comment=NRVBSS34FA New Comment=APT3216LSECK/J4-PRV
+Change Component Comment : Designator=D? Old Comment=NRVBSS34FA New Comment=SS34LWHRVG
+Change Managed Component Library Link : Designator=D? Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=73C550FF-6E44-47E5-BD01-2D2A499EB1A8 New ItemGUID=02DD7F1C-577D-4DFB-8EB3-23AF1DC8CB67 Old RevisionGUID=7D2C493F-985E-4CAF-80D8-7B4964909344 New RevisionGUID=C461A539-667C-4F3C-9CD0-80F99B4B0FCC
+Change Managed Component Library Link : Designator=D? Old VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 New VaultGUID=B7D15EC3-160A-466F-A46C-7801FE6295A7 Old ItemGUID=73C550FF-6E44-47E5-BD01-2D2A499EB1A8 New ItemGUID=138C51B2-0B41-48D6-9975-E876F02DA6AC Old RevisionGUID=7D2C493F-985E-4CAF-80D8-7B4964909344 New RevisionGUID=339D8510-6F3F-4CDB-9083-DEE319BA5254
+Change component parameters: Designator = "D?" ("D?"); Footprint = "FP-425AB-MFG"; UniqueID = "\WXFLOPED" ("\WXFLOPED")
+Change component parameters (AddParameter): Name = "Case Code (Imperial)"; Value = "1206"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Case Code (Metric)"; Value = "3216"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Case/Package"; Value = "1206"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Color"; Value = "Orange"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Dominant Wavelength"; Value = "605nm"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Forward Voltage"; Value = "1.8V"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Height"; Value = "0.75mm"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Length"; Value = "3.2mm"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Lens Color"; Value = "Colorless"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Lens Transparency"; Value = "Clear"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Luminous Intensity"; Value = "50mcd"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Mount"; Value = "Surface Mount"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Packaging"; Value = "Tape and Reel"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "RoHS Compliant"; Value = "Yes"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Test Current"; Value = "2mA"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Viewing Angle"; Value = "120°"; VariantName = "[No Variations]"
+Change component parameters (AddParameter): Name = "Width"; Value = "1.6mm"; VariantName = "[No Variations]"
+Change component parameters: Designator = "D?" ("D?"); Footprint = "FP-425AB-MFG"; UniqueID = "\IDPZRJII" ("\IDPZRJII")
+Change component parameters (AddParameter): Name = "RoHS Compliant"; Value = "Yes"; VariantName = "[No Variations]"
+Added Component: Designator=C?(FP-OS-CON-TH-C9-d_0_6-MFG)
+Add component (AddParameter): Name = "Capacitance"; Value = "100uF"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Case/Package"; Value = "Radial"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Diameter"; Value = "6.3mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Dissipation Factor"; Value = "10%"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "ESR (Equivalent Series Resistance)"; Value = "10mR"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Height"; Value = "9mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Height - Seated (Max)"; Value = "0.354inch"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lead Diameter"; Value = "0.6mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lead Free"; Value = "Lead Free"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lead Pitch"; Value = "2.5mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Leakage Current"; Value = "500uA"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Length"; Value = "9mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Life (Hours)"; Value = "2000Hour"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Operating Temperature"; Value = "105°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Min Operating Temperature"; Value = "-55°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Mount"; Value = "Through Hole"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Package Quantity"; Value = "500"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Packaging"; Value = "Bulk"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Polarity"; Value = "Polar"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Radiation Hardening"; Value = "No"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "REACH SVHC"; Value = "No SVHC"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Ripple Current"; Value = "4.68A"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "RoHS Compliant"; Value = "Yes"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Series"; Value = "OS-CON, SEPC"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Termination"; Value = "Radial"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Tolerance"; Value = "20%"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Voltage Rating"; Value = "16V"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Voltage Rating (DC)"; Value = "16V"; VariantName = "[No Variations]"
+Added Component: Designator=C?(CAPC2013X145X50NL20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vitramon"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "VJ0805Y105KXQRW1BC"; VariantName = "[No Variations]"
+Added Component: Designator=C?(CAPC2013X145X50NL20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vitramon"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "VJ0805Y105KXQRW1BC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC2013X50X30ML20T20)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Vishay Dale"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "CRCW08051K00FKTC"; VariantName = "[No Variations]"
+Added Component: Designator=T?(BIEN TRO VI CHINH NAM)
+Add component (AddParameter): Name = "Chung_Loai"; Value = "C?m"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Don_Vi"; Value = "Con"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Ghi_Chu"; Value = ""; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Kieu_Chan"; Value = ""; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Ma_Hang"; Value = "MH003232"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Ten_Linh_Kien"; Value = "Bi?n Tr? VR 103-10K 3296W"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=GND Pin=C?-1
+Added Pin To Net: NetName=GND Pin=C?-1
+Added Pin To Net: NetName=GND Pin=C?-1
+Added Pin To Net: NetName=+12 Pin=C?-2
+Added Pin To Net: NetName=+12 Pin=C?-2
+Added Pin To Net: NetName=GND Pin=D?-1
+Added Pin To Net: NetName=GND Pin=D?-2
+Added Pin To Net: NetName=GND Pin=R?-1
+Added Pin To Net: NetName=FBack Pin=R?-2
+Added Pin To Net: NetName=FBack Pin=T?-1
+Added Pin To Net: NetName=FBack Pin=T?-2
+Added Pin To Net: NetName=+12 Pin=U?-1
+Added Pin To Net: NetName=GND Pin=U?-3
+Added Pin To Net: NetName=FBack Pin=U?-4
+Added Pin To Net: NetName=GND Pin=U?-5
+Added Pin To Net: NetName=GND Pin=U?-6
+Added Pin To Net: NetName=+5_MCU Pin=C?-2
+Added Pin To Net: NetName=+5_MCU Pin=L?-2
+Added Pin To Net: NetName=+5_MCU Pin=R?-2
+Added Pin To Net: NetName=+5_MCU Pin=T?-3
+Added Net: Name=+5_MCU
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Added Member To Class: ClassName=Sheet1 Member=Component C? 16SEPC100MW
+Added Member To Class: ClassName=Sheet1 Member=Component C? 16SEPC100MW
+Added Member To Class: ClassName=Sheet1 Member=Component C? VJ0805Y105KXQRW1BC
+Added Member To Class: ClassName=Sheet1 Member=Component C? VJ0805Y105KXQRW1BC
+Added Member To Class: ClassName=Sheet1 Member=Component C? VJ0805Y105KXQRW1BC
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? SS34LWHRVG
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? SS34LWHRVG
+Added Member To Class: ClassName=Sheet1 Member=Component D? 8P
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component L? B1047AS-470M=P3
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component T? 10K
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? LM2596SX-12/NOPB
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B

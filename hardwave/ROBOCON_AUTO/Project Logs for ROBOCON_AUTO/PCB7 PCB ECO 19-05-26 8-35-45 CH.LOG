@@ -1,0 +1,71 @@
+Added Component: Designator=C?(CAPC2113X100X50ML30T10)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Kemet"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "C0805X104K4RACTU"; VariantName = "[No Variations]"
+Added Component: Designator=C?(CAPC2113X100X50ML30T10)
+Add component (AddParameter): Name = "Manufacturer"; Value = "Kemet"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Part Number"; Value = "C0805X104K4RACTU"; VariantName = "[No Variations]"
+Added Component: Designator=ENC?(FP-PEC11L-4020K-S0020-MFG)
+Add component (AddParameter): Name = "Height"; Value = "12mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Length"; Value = "24.5mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Operating Temperature"; Value = "80°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Min Operating Temperature"; Value = "-25°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Number of Channels"; Value = "2"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Output Type"; Value = "Quadrature"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Package Quantity"; Value = "75"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Packaging"; Value = "Bulk"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "RoHS Compliant"; Value = "Yes"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Termination"; Value = "Through Hole"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Width"; Value = "11.8mm"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC0805(2012)_L)
+Add component (AddParameter): Name = "Case-EIA"; Value = "0805"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Case-Metric"; Value = "2012"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Power"; Value = "0.125 W"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Technology"; Value = "SMT"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Tolerance"; Value = "5 %"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Value"; Value = "10000.00 Ohm"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC0805(2012)_L)
+Add component (AddParameter): Name = "Case-EIA"; Value = "0805"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Case-Metric"; Value = "2012"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Power"; Value = "0.125 W"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Technology"; Value = "SMT"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Tolerance"; Value = "5 %"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Value"; Value = "10000.00 Ohm"; VariantName = "[No Variations]"
+Added Component: Designator=R?(RESC0805(2012)_L)
+Add component (AddParameter): Name = "Case-EIA"; Value = "0805"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Case-Metric"; Value = "2012"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Power"; Value = "0.125 W"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Technology"; Value = "SMT"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Tolerance"; Value = "5 %"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Value"; Value = "10000.00 Ohm"; VariantName = "[No Variations]"
+Add Component: Footprint Not Found SOIC127P1030X265-16N
+Added Pin To Net: NetName=GND Pin=C?-1
+Added Pin To Net: NetName=GND Pin=C?-1
+Added Pin To Net: NetName=CHA_ROTARY Pin=C?-2
+Added Pin To Net: NetName=CHB_ROTARY Pin=C?-2
+Added Pin To Net: NetName=SW_ROTARY Pin=ENC?-1
+Added Pin To Net: NetName=GND Pin=ENC?-2
+Added Pin To Net: NetName=GND Pin=ENC?-3
+Added Pin To Net: NetName=GND Pin=ENC?-4
+Added Pin To Net: NetName=CHA_ROTARY Pin=ENC?-A
+Added Pin To Net: NetName=CHB_ROTARY Pin=ENC?-B
+Added Pin To Net: NetName=CHA_ROTARY Pin=ENC?-C
+Added Pin To Net: NetName=CHA_ROTARY Pin=R?-1
+Added Pin To Net: NetName=CHB_ROTARY Pin=R?-1
+Added Pin To Net: NetName=SW_ROTARY Pin=R?-1
+Added Pin To Net: NetName=+5 Pin=R?-2
+Added Pin To Net: NetName=+5 Pin=R?-2
+Added Pin To Net: NetName=+5 Pin=R?-2
+Add Pin To Net: Unknown Pin: Pin U?-1
+Add Pin To Net: Unknown Pin: Pin U?-2
+Add Pin To Net: Unknown Pin: Pin U?-3
+Add Pin To Net: Unknown Pin: Pin U?-8
+Add Pin To Net: Unknown Pin: Pin U?-14
+Add Pin To Net: Unknown Pin: Pin U?-15
+Add Pin To Net: Unknown Pin: Pin U?-16
+Added Member To Class: ClassName=Sheet7 Member=Component C? C0805X104K4RACTU
+Added Member To Class: ClassName=Sheet7 Member=Component C? C0805X104K4RACTU
+Added Member To Class: ClassName=Sheet7 Member=Component ENC? PEC11L-4020K-S0020
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Add Class Member: Failed to add class member : Component U? PCF8574DW

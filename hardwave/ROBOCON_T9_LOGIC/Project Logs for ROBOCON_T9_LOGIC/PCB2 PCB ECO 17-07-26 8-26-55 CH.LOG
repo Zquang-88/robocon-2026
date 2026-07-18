@@ -1,0 +1,6 @@
+Removed Pin From Net: NetName=GND Pin=U?-23
+Removed Pin From Net: NetName=GND Pin=U?-24
+Change Component Footprint: Designator=U? Old Footprint=MODULE_DEV-16771 New Footprint=Teensy 4.1
+Change Component Comment : Designator=U? Old Comment=DEV-16771 New Comment=Teensy 4.1
+Change component parameters: Designator = "U?" ("U?"); Footprint = "MODULE_DEV-16771"; UniqueID = "\AYQVQRUB" ("\AYQVQRUB")
+Added Member To Class: ClassName=Sheet2 Member=Component U? Teensy 4.1

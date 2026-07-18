@@ -1,0 +1,113 @@
+Added Component: Designator=D?(FP-425AB-MFG)
+Add component (AddParameter): Name = "Capacitance"; Value = "152pF"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Forward Current"; Value = "3A"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Height"; Value = "1.43mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lifecycle Status"; Value = "Production"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer Lifecycle Status"; Value = "ACTIVE"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Forward Surge Current (Ifsm)"; Value = "80A"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Junction Temperature (Tj)"; Value = "125°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Operating Temperature"; Value = "125°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Repetitive Reverse Voltage (Vrrm)"; Value = "40V"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Min Operating Temperature"; Value = "-55°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "NexarPartId"; Value = "103808874"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Peak Reverse Current"; Value = "500µA"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Reverse Voltage"; Value = "40V"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "RoHS"; Value = "Compliant"; VariantName = "[No Variations]"
+Added Component: Designator=D?(FP-425AB-MFG)
+Add component (AddParameter): Name = "Capacitance"; Value = "152pF"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Forward Current"; Value = "3A"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Height"; Value = "1.43mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lifecycle Status"; Value = "Production"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Manufacturer Lifecycle Status"; Value = "ACTIVE"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Forward Surge Current (Ifsm)"; Value = "80A"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Junction Temperature (Tj)"; Value = "125°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Operating Temperature"; Value = "125°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Repetitive Reverse Voltage (Vrrm)"; Value = "40V"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Min Operating Temperature"; Value = "-55°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "NexarPartId"; Value = "103808874"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Peak Reverse Current"; Value = "500µA"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Reverse Voltage"; Value = "40V"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "RoHS"; Value = "Compliant"; VariantName = "[No Variations]"
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_1" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetD?_2" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetQ?_3" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Add Net: Net with name "NetR?_2" already exists
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? 8P
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? NRVBSS34FA
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? 1N5819HW-7-F
+Added Member To Class: ClassName=Sheet1 Member=Component D? APT3216LSECK/J4-PRV
+Added Member To Class: ClassName=Sheet1 Member=Component D? NRVBSS34FA
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component K? G6D-1A-ASI DC6
+Added Member To Class: ClassName=Sheet1 Member=Component L? B1047AS-470M=P3
+Added Member To Class: ClassName=Sheet1 Member=Component L? B1047AS-470M=P3
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component R? CRCW08051K00FKTC
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? LM2596SX-12/NOPB
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B
+Added Member To Class: ClassName=Sheet1 Member=Component U? LM2596SX-12/NOPB
+Added Member To Class: ClassName=Sheet1 Member=Component U? PC817X2NIP1B

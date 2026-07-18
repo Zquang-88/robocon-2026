@@ -1,0 +1,49 @@
+Removed Pin From Net: NetName=SW1 Pin=ESP1-4
+Removed Pin From Net: NetName=SW2 Pin=ESP1-5
+Removed Pin From Net: NetName=SW3 Pin=ESP1-6
+Removed Pin From Net: NetName=SW4 Pin=ESP1-7
+Removed Pin From Net: NetName=SW6 Pin=ESP1-13
+Removed Pin From Net: NetName=SW5 Pin=ESP1-30
+Removed Pin From Net: NetName=+5 Pin=U?-2
+Removed Pin From Net: NetName=SW_ROTARY Pin=U?-4
+Removed Pin From Net: NetName=CHA_ROTARY Pin=U?-5
+Removed Pin From Net: NetName=CHB_ROTARY Pin=U?-6
+Removed Pin From Net: NetName=PIN+BUZZER Pin=U?-11
+Added Component: Designator=LS?(Coi Chip Speacker)
+Added Component: Designator=Q?(TO92-123)
+Add component (AddParameter): Name = "Value"; Value = "C1815"; VariantName = "[No Variations]"
+Added Component: Designator=R?(tro smd 0805)
+Add component (AddParameter): Name = "Chung_Loai"; Value = "Dán"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Don_Vi"; Value = "Con"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Kieu_Chan"; Value = ""; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Ma_Hang"; Value = "MH005473"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "So_Chan"; Value = "2"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Ten_Linh_Kien"; Value = "Tr? 0805 1% 10k"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=SW_ROTARY Pin=ESP1-4
+Added Pin To Net: NetName=CHA_ROTARY Pin=ESP1-5
+Added Pin To Net: NetName=CHB_ROTARY Pin=ESP1-6
+Added Pin To Net: NetName=PIN+BUZZER Pin=ESP1-30
+Added Pin To Net: NetName=GND Pin=LS?-2
+Added Pin To Net: NetName=+5 Pin=Q?-2
+Added Pin To Net: NetName=PIN+BUZZER Pin=R?-1
+Added Pin To Net: NetName=GND Pin=U?-2
+Added Pin To Net: NetName=SW1 Pin=U?-4
+Added Pin To Net: NetName=SW2 Pin=U?-5
+Added Pin To Net: NetName=SW3 Pin=U?-6
+Added Pin To Net: NetName=SW4 Pin=U?-7
+Added Pin To Net: NetName=SW5 Pin=U?-9
+Added Pin To Net: NetName=SW6 Pin=U?-10
+Added Pin To Net: NetName=SW7 Pin=U?-11
+Added Pin To Net: NetName=SW8 Pin=U?-12
+Added Pin To Net: NetName=NetLS?_1 Pin=LS?-1
+Added Pin To Net: NetName=NetLS?_1 Pin=Q?-1
+Added Net: Name=NetLS?_1
+Added Pin To Net: NetName=NetQ?_3 Pin=Q?-3
+Added Pin To Net: NetName=NetQ?_3 Pin=R?-2
+Added Net: Name=NetQ?_3
+Added Member To Class: ClassName=Sheet7 Member=Component C? C0805X104K4RACTU
+Added Member To Class: ClassName=Sheet7 Member=Component LS? Coi Chip Speaker
+Added Member To Class: ClassName=Sheet7 Member=Component Q? 2SC1815
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
+Added Member To Class: ClassName=Sheet7 Member=Component R? 10K 5% 0805(2012)
