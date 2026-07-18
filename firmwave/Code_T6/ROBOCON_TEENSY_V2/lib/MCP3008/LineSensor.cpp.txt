@@ -1,0 +1,356 @@
+#include "LineSensor.h"
+
+#define LINE_EEPROM_MAGIC 0xA55A2026
+
+struct LineCalibData {
+    uint32_t magic;
+    uint16_t white[8];
+    uint16_t black[8];
+    uint16_t threshold[8];
+    bool blackMode;
+};
+
+LineSensor::LineSensor(uint8_t csPin) {
+    _csPin = csPin;
+}
+
+void LineSensor::begin() {
+    pinMode(_csPin, OUTPUT);
+    digitalWrite(_csPin, HIGH);
+
+    SPI.begin();
+
+    resetCalibration();
+}
+
+uint16_t LineSensor::readMCP3008(uint8_t channel) {
+    if (channel > 7) return 0;
+
+    SPI.beginTransaction(mcpSPI);
+
+    digitalWrite(_csPin, LOW);
+
+    SPI.transfer(0x01);
+    uint8_t highByte = SPI.transfer(0x80 | (channel << 4));
+    uint8_t lowByte  = SPI.transfer(0x00);
+
+    digitalWrite(_csPin, HIGH);
+
+    SPI.endTransaction();
+
+    uint16_t value = ((highByte & 0x03) << 8) | lowByte;
+
+    return value;
+}
+
+void LineSensor::readRaw() {
+    if (readSamples < 1) readSamples = 1;
+    if (readSamples > 20) readSamples = 20;
+
+    for (uint8_t ch = 0; ch < 8; ch++) {
+        uint32_t sum = 0;
+
+        for (uint8_t s = 0; s < readSamples; s++) {
+            sum += readMCP3008(ch);
+        }
+
+        adcValue[ch] = sum / readSamples;
+    }
+}
+
+void LineSensor::learnWhite(uint16_t samples) {
+    if (samples < 1) samples = 1;
+    if (samples > 500) samples = 500;
+
+    uint32_t sum[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+    for (uint16_t s = 0; s < samples; s++) {
+        for (uint8_t ch = 0; ch < 8; ch++) {
+            sum[ch] += readMCP3008(ch);
+        }
+
+        delay(2);
+    }
+
+    for (uint8_t ch = 0; ch < 8; ch++) {
+        whiteValue[ch] = sum[ch] / samples;
+        adcValue[ch] = whiteValue[ch];
+    }
+
+    updateThreshold();
+}
+
+void LineSensor::learnBlack(uint16_t samples) {
+    if (samples < 1) samples = 1;
+    if (samples > 500) samples = 500;
+
+    uint32_t sum[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+    for (uint16_t s = 0; s < samples; s++) {
+        for (uint8_t ch = 0; ch < 8; ch++) {
+            sum[ch] += readMCP3008(ch);
+        }
+
+        delay(2);
+    }
+
+    for (uint8_t ch = 0; ch < 8; ch++) {
+        blackValue[ch] = sum[ch] / samples;
+        adcValue[ch] = blackValue[ch];
+    }
+
+    updateThreshold();
+}
+
+void LineSensor::updateThreshold() {
+    for (uint8_t i = 0; i < 8; i++) {
+        thresholdValue[i] = (whiteValue[i] + blackValue[i]) / 2;
+    }
+}
+
+bool LineSensor::isLineAtChannel(uint8_t ch, bool lastState) {
+    int adc = adcValue[ch];
+    int th  = thresholdValue[ch];
+
+    int margin = lineMargin;
+
+    bool lineHigher = false;
+
+    if (blackLineMode) {
+        lineHigher = blackValue[ch] > whiteValue[ch];
+    }
+    else {
+        lineHigher = whiteValue[ch] > blackValue[ch];
+    }
+
+    bool isLine = false;
+
+    if (lineHigher) {
+        if (lastState) {
+            isLine = adc > (th - margin);
+        }
+        else {
+            isLine = adc > (th + margin);
+        }
+    }
+    else {
+        if (lastState) {
+            isLine = adc < (th + margin);
+        }
+        else {
+            isLine = adc < (th - margin);
+        }
+    }
+
+    return isLine;
+}
+
+uint8_t LineSensor::readBits() {
+    readRaw();
+
+    uint8_t bits = 0;
+
+    for (uint8_t ch = 0; ch < 8; ch++) {
+        uint8_t bitMask = 1 << (7 - ch);
+
+        bool lastState = (lastBits & bitMask) != 0;
+        bool isLine = isLineAtChannel(ch, lastState);
+
+        if (isLine) {
+            bits |= bitMask;
+        }
+    }
+
+    lastBits = bits;
+
+    return bits;
+}
+
+bool LineSensor::saveToEEPROM(int address) {
+    LineCalibData data;
+
+    data.magic = LINE_EEPROM_MAGIC;
+    data.blackMode = blackLineMode;
+
+    for (uint8_t i = 0; i < 8; i++) {
+        data.white[i] = whiteValue[i];
+        data.black[i] = blackValue[i];
+        data.threshold[i] = thresholdValue[i];
+    }
+
+    EEPROM.put(address, data);
+
+    return true;
+}
+
+bool LineSensor::loadFromEEPROM(int address) {
+    LineCalibData data;
+
+    EEPROM.get(address, data);
+
+    if (data.magic != LINE_EEPROM_MAGIC) {
+        return false;
+    }
+
+    blackLineMode = data.blackMode;
+
+    for (uint8_t i = 0; i < 8; i++) {
+        whiteValue[i] = data.white[i];
+        blackValue[i] = data.black[i];
+        thresholdValue[i] = data.threshold[i];
+    }
+
+    lastBits = 0;
+
+    return true;
+}
+
+void LineSensor::resetCalibration() {
+    blackLineMode = true;
+    lastBits = 0;
+
+    for (uint8_t i = 0; i < 8; i++) {
+        adcValue[i] = 0;
+
+        whiteValue[i] = 100;
+        blackValue[i] = 900;
+        thresholdValue[i] = 500;
+    }
+}
+
+void LineSensor::printRaw() {
+    for (uint8_t i = 0; i < 8; i++) {
+        Serial.print(adcValue[i]);
+        Serial.print('\t');
+    }
+}
+
+void LineSensor::printBits(uint8_t bits) {
+    for (int8_t i = 7; i >= 0; i--) {
+        Serial.print((bits >> i) & 0x01);
+    }
+}
+
+void LineSensor::printCalib() {
+    Serial.println("========== LINE CALIB ==========");
+
+    Serial.print("White: ");
+    for (uint8_t i = 0; i < 8; i++) {
+        Serial.print(whiteValue[i]);
+        Serial.print('\t');
+    }
+    Serial.println();
+
+    Serial.print("Black: ");
+    for (uint8_t i = 0; i < 8; i++) {
+        Serial.print(blackValue[i]);
+        Serial.print('\t');
+    }
+    Serial.println();
+
+    Serial.print("Thres: ");
+    for (uint8_t i = 0; i < 8; i++) {
+        Serial.print(thresholdValue[i]);
+        Serial.print('\t');
+    }
+    Serial.println();
+
+    Serial.print("Mode: ");
+    Serial.println(blackLineMode ? "BLACK LINE" : "WHITE LINE");
+
+    Serial.print("Read samples: ");
+    Serial.println(readSamples);
+
+    Serial.print("Margin: ");
+    Serial.println(lineMargin);
+
+    Serial.println("================================");
+}
+
+uint16_t LineSensor::getADC(uint8_t ch) {
+    if (ch > 7) return 0;
+    return adcValue[ch];
+}
+
+uint16_t LineSensor::getThreshold(uint8_t ch) {
+    if (ch > 7) return 0;
+    return thresholdValue[ch];
+}
+
+void LineSensor::setBlackLineMode(bool mode) {
+    blackLineMode = mode;
+    lastBits = 0;
+}
+
+bool LineSensor::getBlackLineMode() {
+    return blackLineMode;
+}
+
+void LineSensor::setReadSamples(uint8_t samples) {
+    if (samples < 1) samples = 1;
+    if (samples > 20) samples = 20;
+
+    readSamples = samples;
+}
+
+void LineSensor::setMargin(uint16_t margin) {
+    if (margin > 200) margin = 200;
+
+    lineMargin = margin;
+}
+
+int16_t LineSensor::getLineError() {
+    uint8_t bits = readBits();
+
+    const int16_t weight[8] = {
+        -3500, -2500, -1500, -500,
+         500,  1500,  2500, 3500
+    };
+
+    int32_t sum = 0;
+    int16_t count = 0;
+
+    for (uint8_t ch = 0; ch < 8; ch++) {
+        uint8_t bitMask = 1 << (7 - ch);
+
+        if (bits & bitMask) {
+            sum += weight[ch];
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        return LINE_LOST_ERROR;
+    }
+
+    return sum / count;
+}
+
+uint8_t LineSensor::countLine(uint8_t bits) {
+    uint8_t count = 0;
+
+    for (uint8_t i = 0; i < 8; i++) {
+        if (bits & (1 << i)) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+bool LineSensor::isCenter(uint8_t bits) {
+    if (bits == 0b00011000) return true;
+    if (bits == 0b00111000) return true;
+    if (bits == 0b00011100) return true;
+    if (bits == 0b00111100) return true;
+
+    return false;
+}
+
+bool LineSensor::isLost(uint8_t bits) {
+    return bits == 0;
+}
+
+bool LineSensor::isCrossLine(uint8_t bits) {
+    return countLine(bits) >= 5;
+}

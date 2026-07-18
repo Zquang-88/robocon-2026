@@ -1,0 +1,1279 @@
+#include <Arduino.h>
+#include <Encoder.h>
+#include <Wire.h>
+#include <Adafruit_BNO055.h>
+#include <utility/imumaths.h>
+#include <VL53L1X.h>
+
+VL53L1X tofFront;
+VL53L1X tofRight;
+VL53L1X tofLeft;
+VL53L1X tofDrop;
+VL53L1X tof;
+//==================YAW BNO055================
+Adafruit_BNO055 bno(55, 0x28, &Wire1);
+float targetYaw = 0;
+float currentYaw = 0;
+
+float headingKp = 0.8;
+float headingKi = 0.0;
+float headingKd = 0.2;
+
+float speedCmd = 0;
+static float lastYaw = 0;
+
+float headingIntegral = 0;
+float headingLastError = 0;
+float headingGain = 1.5;
+float omega = 0;
+float error = 0;
+//================PositionK===================
+const float mmPerCount = 0.73;
+float positionKp = 0.08;
+float positionError = 0;
+
+float targetDistanceMM = 0;
+float currentDistance=0;
+bool moveDone = true;
+bool commandSent = false;
+
+ float avgCount = 0;
+long startFL;
+long startFR;
+long startBL;
+long startBR;
+//=================AUTO========================//
+// float vx = 0;
+// float vy = 0;
+// float Vx = vx * speedCmd;
+// float Vy = vy * speedCmd;
+enum MoveType
+{
+    FORWARD,
+    RIGHT,
+    LEFT,
+    ROTATE
+};
+
+MoveType moveType = FORWARD;
+// ================= ENCODER =================
+Encoder encFL(18, 19);
+Encoder encFR(22, 23);
+Encoder encBL(15, 14);
+Encoder encBR(29, 28);
+
+// ================= MOTOR ===================
+#define FL_RPWM 36
+#define FL_LPWM 37
+
+#define FR_RPWM 4
+#define FR_LPWM 5
+
+#define BL_RPWM 25
+#define BL_LPWM 24
+
+#define BR_RPWM 3
+#define BR_LPWM 2
+
+// ================= LINE SENSOR =================
+
+#define LINE_LEFT_PIN   40
+#define LINE_RIGHT_PIN  41
+elapsedMillis leftDebounce;
+elapsedMillis rightDebounce;
+const float SENSOR_TO_CENTER_MM = 20;
+
+
+bool lastLineLeft  = false;
+bool lastLineRight = false;
+
+volatile int leftLineCount  = 0;
+volatile int rightLineCount = 0;
+volatile bool leftLineHit  = false;
+volatile bool rightLineHit = false;
+bool leftOnLine = false;
+bool rightOnLine = false;
+// ================= UART =================//
+#define UART_ESP32 Serial5
+String espMsg = "";
+bool espDone = false;
+//================= TOF =================//
+float targetTOF = 70;
+float tofError = 0;
+float tofKp = 0.08;
+float matchYaw = 0;
+#define TOF_FILTER_SIZE 5
+
+int tofBuffer[TOF_FILTER_SIZE];
+int tofIndex = 0;
+
+//==========================KỊCH BẢN======================//
+enum AutoState
+{
+    CAN_START,
+
+    DI_SANG_PHAI_A,
+    BU_TAM_A,
+    CAN_YAW_A,
+    CAN_A,
+    DOI_GAP_A,
+
+    DI_SANG_PHAI_B,
+    BU_TAM_B,
+    CAN_YAW_B,
+    CAN_B,
+    DOI_GAP_B,
+
+    DI_SANG_C,
+    BU_TAM_C,
+    CAN_YAW_C,
+
+    CHAY_LEN_XANH,
+
+    TIEN_10CM_A,
+    DOI_THA_2A,
+
+    TIEN_10CM_B,
+    DOI_THA_2B,
+
+    FINISH
+};
+AutoState state = CAN_START;
+// ===========================================
+struct MotorPID
+{
+    float kp;
+    float ki;
+    float kd;
+    
+    int feedForward;
+    
+    float targetSpeed;
+    float currentSpeed;
+    
+    float integral;
+    float lastError;
+    
+    int pwm;
+};
+
+MotorPID FL;
+MotorPID FR;
+MotorPID BL;
+MotorPID BR;
+
+// ===========================================
+long lastFL = 0;
+long lastFR = 0;
+long lastBL = 0;
+long lastBR = 0;
+
+elapsedMillis pidTimer;
+elapsedMillis imuTimer;
+// ===========================================
+void setMotor(int pwm,
+              int RPWM,
+              int LPWM)
+{
+    pwm = constrain(pwm, -255, 255);
+    
+    if(pwm > 0)
+    {
+        analogWrite(RPWM, pwm);
+        analogWrite(LPWM, 0);
+    }
+    else if(pwm < 0)
+    {
+        analogWrite(RPWM, 0);
+        analogWrite(LPWM, -pwm);
+    }
+    else
+    {
+        analogWrite(RPWM, 0);
+        analogWrite(LPWM, 0);
+    }
+}
+
+// ===========================================
+void updatePID(MotorPID &m)
+{
+    float error =
+        m.targetSpeed -
+        m.currentSpeed;
+
+    // Integral
+    m.integral += error;
+
+    m.integral =
+        constrain(m.integral,
+                  -100,
+                  100);
+
+    // Derivative
+    float derivative =
+        error - m.lastError;
+
+    m.lastError = error;
+
+    // PID Output
+    float output =
+        m.kp * error +
+        m.ki * m.integral +
+        m.kd * derivative;
+
+    // FeedForward
+    int ff =
+        abs(m.targetSpeed) * 5.65;
+
+    // PWM
+    if(m.targetSpeed > 0)
+    {
+        m.pwm =
+            ff + output;
+    }
+    else if(m.targetSpeed < 0)
+    {
+        m.pwm =
+            -ff + output;
+    }
+    else
+    {
+        m.pwm = 0;
+        m.integral = 0;
+    }
+
+    m.pwm =
+        constrain(m.pwm,
+                  -255,
+                  255);
+}
+// ===========================================
+void setupPID()
+{
+    // ===== FL =====
+    FL.kp = 3.0;
+    FL.ki = 0.28;
+    FL.kd = 0.0;
+
+    // ===== FR =====
+    FR.kp = 3.0;
+    FR.ki = 0.28;
+    FR.kd = 0.02;
+
+    // ===== BL =====
+    BL.kp = 3.0;
+    BL.ki = 0.29;
+    BL.kd = 0.02;
+
+    // ===== BR =====
+    BR.kp = 3.0;
+    BR.ki = 0.29;
+    BR.kd = 0.02;
+
+}
+
+// ===========================================
+float readYaw()
+{
+    imu::Vector<3> euler =
+        bno.getVector(
+            Adafruit_BNO055::VECTOR_EULER);
+
+    return euler.x();
+}
+float headingPID()
+{       error = targetYaw - currentYaw;
+
+    if(error > 180)
+        error -= 360;
+
+    if(error < -180)
+        error += 360;
+
+    headingIntegral += error;
+
+    headingIntegral =
+        constrain(
+            headingIntegral,
+            -50,
+            50);
+
+    float derivative = error - headingLastError;
+
+    headingLastError = error;
+
+    float output =
+        headingKp * error +
+        headingKi * headingIntegral +
+        headingKd * derivative;
+
+    output =
+        constrain(
+            output,
+            -20,
+            20);
+
+    return output;
+}
+
+
+//===================================================
+void moveForward(float mm)
+{
+    targetDistanceMM = mm;
+
+    startFL = encFL.read();
+    startFR = encFR.read();
+    startBL = encBL.read();
+    startBR = encBR.read();
+
+    moveDone = false;
+}
+
+void updatePositionPID()
+{
+    long dFL = encFL.read() - startFL;
+    long dFR = encFR.read() - startFR;
+    long dBL = encBL.read() - startBL;
+    long dBR = encBR.read() - startBR;
+
+
+    switch(moveType)
+    {
+    case FORWARD:
+
+        avgCount =
+        (dFL + dFR + dBL + dBR)/4.0;
+
+        break;
+
+    case RIGHT:
+
+        avgCount =
+        (dFL - dFR - dBL + dBR)/4.0;
+
+        break;
+
+    case LEFT:
+
+        avgCount =
+        (-dFL + dFR + dBL - dBR)/4.0;
+
+        break;
+    }
+
+    currentDistance =
+        avgCount * mmPerCount;
+
+    positionError =
+        targetDistanceMM -
+        currentDistance;
+
+        speedCmd = positionKp * positionError;
+
+        speedCmd =
+            constrain(speedCmd,
+                    -15,
+                    15);
+
+    // giảm tốc khi gần đích
+    if(abs(positionError) < 150)
+    {
+        speedCmd =
+            constrain(speedCmd, -5,5);
+    }
+
+    // tới đích
+    if(abs(positionError) < 30)
+    {
+        speedCmd = 0;
+
+        FL.targetSpeed = 0;
+        FR.targetSpeed = 0;
+        BL.targetSpeed = 0;
+        BR.targetSpeed = 0;
+
+        moveDone = true;
+    }
+
+}
+//===============AUTO=======================//
+void chayThang(float mm)
+{
+    currentDistance = 0;
+    targetDistanceMM = mm;
+    targetYaw = matchYaw;
+    headingIntegral = 0;
+    headingLastError = 0;
+
+    startFL = encFL.read();
+    startFR = encFR.read();
+    startBL = encBL.read();
+    startBR = encBR.read();
+
+    moveType = FORWARD;
+    moveDone = false;
+}
+void sangPhai(float mm)
+{
+    currentDistance = 0;
+    targetDistanceMM = mm;
+    targetYaw = matchYaw;
+    headingIntegral = 0;
+    headingLastError = 0;
+
+    startFL = encFL.read();
+    startFR = encFR.read();
+    startBL = encBL.read();
+    startBR = encBR.read();
+
+    moveType = RIGHT;
+    moveDone = false;
+}
+
+void sangTrai(float mm)
+{
+    currentDistance = 0;
+    targetDistanceMM = mm;
+    targetYaw = matchYaw;
+    headingIntegral = 0;
+    headingLastError = 0;
+
+    startFL = encFL.read();
+    startFR = encFR.read();
+    startBL = encBL.read();
+    startBR = encBR.read();
+
+    moveType = LEFT;
+    moveDone = false;
+}
+//================HÀM ĐỌC CẢM BIẾN LINE 2 BÊN THÂN====================//
+void updateLineCounter()
+{
+    bool leftNow =
+        digitalRead(LINE_LEFT_PIN);
+
+    bool rightNow =
+        digitalRead(LINE_RIGHT_PIN);
+
+    // đen = LOW
+    if(leftNow == HIGH &&
+       lastLineLeft == LOW &&
+       leftDebounce > 200)
+    {
+        leftLineCount++;
+
+        leftDebounce = 0;
+
+        Serial.print("LEFT=");
+        Serial.println(leftLineCount);
+    }
+
+    if(rightNow == HIGH &&
+       lastLineRight == LOW &&
+       rightDebounce > 200)
+    {
+        rightLineCount++;
+
+        rightDebounce = 0;
+
+        Serial.print("RIGHT=");
+        Serial.println(rightLineCount);
+    }
+
+    lastLineLeft = leftNow;
+    lastLineRight = rightNow;
+}
+//================UART ESP32====================//
+void readESP()
+{
+    while(Serial5.available())
+    {
+        String quang =
+            Serial5.readStringUntil('\n');
+
+        quang.trim();
+
+        Serial.print("RX=");
+        Serial.println(quang);
+
+        if(quang == "DONE")
+        {
+            espDone = true;
+
+            Serial.println("DONE RECEIVED");
+        }
+    }
+}
+void stopRobot()
+{
+    speedCmd = 0;
+    omega = 0;
+    
+    headingIntegral = 0;
+    headingLastError = 0;
+    
+    FL.targetSpeed = 0;
+    FR.targetSpeed = 0;
+    BL.targetSpeed = 0;
+    BR.targetSpeed = 0;
+}
+//================TOF====================//
+float tofFiltered = 0;
+int readTOF()
+{
+    return tof.read();
+}
+int readTOFFiltered()
+{
+    tofBuffer[tofIndex] = tof.read();
+    
+    tofIndex++;
+    
+    if(tofIndex >= TOF_FILTER_SIZE)
+    tofIndex = 0;
+    
+    long sum = 0;
+    
+    for(int i=0;i<TOF_FILTER_SIZE;i++)
+    {
+        sum += tofBuffer[i];
+    }
+    
+    return sum / TOF_FILTER_SIZE;
+}
+void updateTOFControl()
+{
+    int dist = readTOFFiltered();
+    
+    tofError =
+    targetTOF - dist;
+    
+    speedCmd =
+    tofError * tofKp;
+    
+    speedCmd =
+    constrain(
+        speedCmd,
+        -2,
+        2);
+    }
+    
+    
+    void setup()
+    {
+        Serial.begin(115200);
+        Serial5.begin(115200);
+        
+        delay(2000);
+        Serial.println("BOOT OK");
+        Serial5.println("READY");
+    pinMode(FL_RPWM, OUTPUT);
+    pinMode(FL_LPWM, OUTPUT);
+
+    pinMode(FR_RPWM, OUTPUT);
+    pinMode(FR_LPWM, OUTPUT);
+
+    pinMode(BL_RPWM, OUTPUT);
+    pinMode(BL_LPWM, OUTPUT);
+
+    pinMode(BR_RPWM, OUTPUT);
+    pinMode(BR_LPWM, OUTPUT);
+
+    analogWriteResolution(8);
+
+    analogWriteFrequency(FL_RPWM, 20000);
+    analogWriteFrequency(FL_LPWM, 20000);
+
+    analogWriteFrequency(FR_RPWM, 20000);
+    analogWriteFrequency(FR_LPWM, 20000);
+
+    analogWriteFrequency(BL_RPWM, 20000);
+    analogWriteFrequency(BL_LPWM, 20000);
+
+    analogWriteFrequency(BR_RPWM, 20000);
+    analogWriteFrequency(BR_LPWM, 20000);
+
+    setupPID();
+    pinMode(LINE_LEFT_PIN, INPUT);
+    pinMode(LINE_RIGHT_PIN, INPUT);
+
+    // test
+    // float TOCDO = 6;
+    // FL.targetSpeed = TOCDO;
+    // FR.targetSpeed = TOCDO;
+    // BL.targetSpeed = TOCDO;
+    // BR.targetSpeed = TOCDO;
+
+    //YAW
+Wire1.begin();
+
+if(!bno.begin())
+{
+    while(1);
+}
+
+bno.setExtCrystalUse(true);
+
+delay(1000);
+matchYaw = readYaw();
+targetYaw = matchYaw;
+
+Wire1.begin();
+
+tof.setBus(&Wire1);
+
+if(!tof.init())
+{
+    Serial.println("TOF FAIL");
+    while(1);
+}
+
+tof.setDistanceMode(VL53L1X::Long);
+tof.startContinuous(10);
+
+
+for(int i=0;i<TOF_FILTER_SIZE;i++)
+{
+    tofBuffer[i] = tof.read();
+    //===========================================
+}
+}
+void loop()
+{
+    Serial.print("STATE=");
+    updateLineCounter();
+    readESP();
+    // =====================================
+    // IMU + Heading PID (100Hz)
+    // =====================================
+    if(imuTimer >= 10)
+    {
+        imuTimer = 0;
+
+        currentYaw = readYaw();
+
+        omega = headingPID();
+
+        lastYaw = currentYaw;
+        
+    }
+
+    // =====================================
+    // PID tốc độ + PID vị trí (100Hz)
+    // =====================================
+    if(pidTimer >= 10)
+    {
+        pidTimer = 0;
+
+    
+        // ==========================
+        // PID vị trí
+        // ==========================
+        if(!moveDone)
+        {
+            updatePositionPID();
+        
+        }
+        switch(state)
+        {
+        case CAN_START:
+        {
+            int dist = readTOFFiltered();
+
+            int error =
+                targetTOF - dist;
+
+            if(abs(error) < 10)
+            {
+                stopRobot();
+
+               targetYaw = matchYaw;
+
+        leftLineCount = 0;
+        rightLineCount = 0;
+
+        leftOnLine  = digitalRead(LINE_LEFT_PIN);
+        rightOnLine = digitalRead(LINE_RIGHT_PIN);
+
+                state = DI_SANG_PHAI_A;
+            }
+            else
+            {
+                moveType = FORWARD;
+
+                updateTOFControl();
+            
+            }
+        }
+        break;
+    case DI_SANG_PHAI_A:
+
+    moveType = RIGHT;
+    speedCmd = 4;
+        if(leftLineCount >= 2)
+{
+    leftLineHit = false;
+
+    sangPhai(SENSOR_TO_CENTER_MM);
+
+   
+
+    state = BU_TAM_A;
+}
+            break;
+    case BU_TAM_A:
+
+    if(moveDone)
+    {
+        stopRobot();
+
+        targetYaw = matchYaw;
+
+        state = CAN_YAW_A;
+    }
+
+    break;
+       case CAN_YAW_A:
+{
+    float yawError =
+        targetYaw - currentYaw;
+
+    if(yawError > 180)
+        yawError -= 360;
+
+    if(yawError < -180)
+        yawError += 360;
+
+    if(abs(yawError) < 1.0)
+    {
+        stopRobot();
+
+        state = CAN_A;
+    }
+    else
+    {
+        moveType = ROTATE;
+    }
+
+    // Serial.print("YawErr=");
+    // Serial.println(yawError);
+}
+break;
+case CAN_A:
+{
+    Serial.println("CAN_A");
+    int dist = readTOFFiltered();
+
+    int error =
+        targetTOF - dist;
+
+    if(abs(error) < 10)
+    {
+        stopRobot();
+      espDone = false;   
+        Serial5.println("POINT_A");
+
+        state = DOI_GAP_A;
+    }
+    else
+    {
+        moveType = FORWARD;
+
+        speedCmd =
+            constrain(error * 0.08,
+                      -2,
+                       2);
+    }
+}
+break;
+
+   case DOI_GAP_A:
+Serial.println("DOI_GAP_A");
+   if(espDone)
+{
+    espDone = false;
+
+    rightLineCount = 0;
+
+    lastLineRight =
+        digitalRead(LINE_RIGHT_PIN);
+
+    rightDebounce = 0;
+
+    Serial.print("RESET RC=");
+    Serial.println(rightLineCount);
+
+    state = DI_SANG_PHAI_B;
+
+    Serial.println("GO B");
+}
+
+    break;
+
+       case DI_SANG_PHAI_B:
+{
+    moveType = RIGHT;
+    speedCmd = 4;
+
+    static elapsedMillis dbg;
+
+    if(dbg > 100)
+    {
+        dbg = 0;
+
+        Serial.print("RC=");
+        Serial.print(rightLineCount);
+
+        Serial.print(" RAW=");
+        Serial.println(digitalRead(LINE_RIGHT_PIN));
+    }
+
+    if(rightLineCount >= 1)
+    {
+        Serial.println("FOUND B");
+
+        sangPhai(SENSOR_TO_CENTER_MM);
+
+        state = BU_TAM_B;
+    }
+}
+break;
+    case BU_TAM_B:
+
+    if(moveDone)
+    {
+        stopRobot();
+
+        targetYaw = matchYaw;
+
+        state = CAN_YAW_B;
+    }
+
+    break;
+        case CAN_YAW_B:
+    {
+        float yawError =
+            targetYaw - currentYaw;
+
+        if(yawError > 180)
+            yawError -= 360;
+
+        if(yawError < -180)
+            yawError += 360;
+
+        if(abs(yawError) < 1.0)
+        {
+            stopRobot();
+
+            state = CAN_B;
+        }
+        else
+        {
+            moveType = ROTATE;
+        }
+    }
+    break;
+            case CAN_B:
+    {
+        int dist = readTOFFiltered();
+
+        int error =
+            targetTOF - dist;
+
+        if(abs(error) < 10)
+        {
+            stopRobot();
+
+            Serial5.println("POINT_B");
+            espDone = false;
+            
+            state = DOI_GAP_B;
+        }
+        else
+        {
+            moveType = FORWARD;
+            
+            speedCmd =
+            constrain(
+                error * 0.08,
+                -2,
+                2);
+            }
+        }
+        break;
+        
+       case DOI_GAP_B:
+
+if(espDone)
+{
+    espDone = false;
+
+    rightLineCount = 0;
+
+    lastLineRight =
+        digitalRead(LINE_RIGHT_PIN);
+
+    rightDebounce = 0;
+
+    state = DI_SANG_C;
+    Serial.println("GO C");
+}
+break;
+   case DI_SANG_C:
+
+    moveType = RIGHT;
+    speedCmd = 4;
+
+    if(rightLineCount >= 1)
+    {
+        stopRobot();
+
+        sangPhai(190);   // 15cm
+
+        state = BU_TAM_C;
+
+    }
+break;
+case BU_TAM_C:
+
+    if(moveDone)
+    {
+        stopRobot();
+
+        targetYaw = matchYaw;
+
+        state = CAN_YAW_C;
+    }
+
+break;
+       case CAN_YAW_C:
+{
+    float yawError =
+        targetYaw - currentYaw;
+
+    if(yawError > 180)
+        yawError -= 360;
+
+    if(yawError < -180)
+        yawError += 360;
+
+    if(abs(yawError) < 1.0)
+    {
+        stopRobot();
+        rightLineCount = 0;
+        chayThang(3000);
+
+        state = CHAY_LEN_XANH;
+    }
+    else
+    {
+        moveType = ROTATE;
+    }
+}
+break;
+case CHAY_LEN_XANH:
+if(rightLineCount >= 3)
+{
+    stopRobot();
+
+    chayThang(100);
+
+    state = TIEN_10CM_A;
+}
+
+break;
+case TIEN_10CM_A:
+
+    if(moveDone)
+    {
+        stopRobot();
+
+        espDone = false;
+
+        Serial5.println("THA_2A");
+
+        state = DOI_THA_2A;
+    }
+
+break;
+case DOI_THA_2A:
+
+    if(espDone)
+    {
+        espDone = false;
+
+        chayThang(100);
+
+        state = TIEN_10CM_B;
+    }
+
+break;
+case TIEN_10CM_B:
+
+    if(moveDone)
+    {
+        stopRobot();
+
+        espDone = false;
+
+        Serial5.println("THA_2B");
+
+        state = DOI_THA_2B;
+    }
+
+break;
+case DOI_THA_2B:
+
+    if(espDone)
+    {
+        espDone = false;
+
+        state = FINISH;
+    }
+
+break;
+
+        case FINISH:
+
+            stopRobot();
+
+            Serial5.println("DROP");
+
+            break;
+    }
+
+
+
+
+
+switch(moveType)
+{
+case FORWARD:
+
+    FL.targetSpeed = speedCmd + omega;
+    FR.targetSpeed = speedCmd - omega;
+
+    BL.targetSpeed = speedCmd + omega;
+    BR.targetSpeed = speedCmd - omega;
+
+    break;
+
+case RIGHT:
+
+    FL.targetSpeed = speedCmd + omega;
+    FR.targetSpeed = -speedCmd - omega;
+
+    BL.targetSpeed = -speedCmd + omega;
+    BR.targetSpeed = speedCmd - omega;
+
+    break;
+
+case LEFT:
+
+    FL.targetSpeed = -speedCmd + omega;
+    FR.targetSpeed = speedCmd - omega;
+
+    BL.targetSpeed = speedCmd + omega;
+    BR.targetSpeed = -speedCmd - omega;
+
+    break;
+
+case ROTATE:
+
+    FL.targetSpeed = omega;
+    FR.targetSpeed = -omega;
+
+    BL.targetSpeed = omega;
+    BR.targetSpeed = -omega;
+
+    break;
+}
+
+        // ==========================
+        // Đọc encoder
+        // ==========================
+        long nowFL = encFL.read();
+        long nowFR = encFR.read();
+        long nowBL = encBL.read();
+        long nowBR = encBR.read();
+
+        FL.currentSpeed =nowFL - lastFL;
+        FR.currentSpeed =nowFR - lastFR;
+        BL.currentSpeed = nowBL - lastBL;
+        BR.currentSpeed = nowBR - lastBR;
+
+
+        lastFL = nowFL;
+        lastFR = nowFR;
+        lastBL = nowBL;
+        lastBR = nowBR;
+
+        updatePID(FL);
+        updatePID(FR);
+        updatePID(BL);
+        updatePID(BR);
+
+        setMotor(FL.pwm, FL_RPWM, FL_LPWM);
+        setMotor(FR.pwm, FR_RPWM, FR_LPWM);
+        setMotor(BL.pwm, BL_RPWM, BL_LPWM);
+        setMotor(BR.pwm, BR_RPWM, BR_LPWM);
+       
+        // Serial.print("FL:");
+        // Serial.print(FL.currentSpeed);
+        // Serial.print(" PWM:");
+        // Serial.print(FL.pwm);
+        // Serial.print(" Error:");
+        // Serial.print(FL.targetSpeed -FL.currentSpeed);
+
+        // Serial.print(" | FR:");
+        // Serial.print(FR.currentSpeed);
+        // Serial.print(" PWM:");
+        // Serial.print(FR.pwm);
+        // Serial.print(" Error:");
+        // Serial.print(FR.targetSpeed -FR.currentSpeed);
+
+        // Serial.print(" | BL:");
+        // Serial.print(BL.currentSpeed);
+        // Serial.print(" PWM:");
+        // Serial.print(BL.pwm);
+        // Serial.print(" Error:");
+        // Serial.print(BL.targetSpeed -BL.currentSpeed);
+
+        // Serial.print(" | BR:");
+        // Serial.print(BR.currentSpeed);
+        // Serial.print(" PWM:");
+        // Serial.print(BR.pwm);
+        // Serial.print(" Error:");
+        // Serial.println(BR.targetSpeed -BR.currentSpeed);
+
+        // Serial.print(encFL.read());
+        // Serial.print(" ");
+
+        // Serial.print(encFR.read());
+        // Serial.print(" ");
+
+        // Serial.print(encBL.read());
+        // Serial.print(" ");
+
+        // Serial.println(encBR.read());
+
+            // Serial.print("Yaw:");
+            // Serial.print(currentYaw);
+
+            // Serial.print(" Error:");
+            // Serial.print(error);
+
+            // Serial.print(" Omega:");
+            // Serial.print(omega);
+
+            // Serial.print(" dYaw=");
+            // Serial.println(currentYaw - lastYaw);
+
+            //     Serial.print("Dist:");
+            //     Serial.print(currentDistance);
+
+            //     Serial.print(" Error:");
+            //     Serial.print(positionError);
+
+            //     Serial.print(" SpeedCmd:");
+            //     Serial.println(speedCmd);
+//             static elapsedMillis debugTimer;
+
+//             if(debugTimer > 200)
+//             {
+//                 debugTimer = 0;
+
+//                 Serial.print("AVG=");
+//                 Serial.print(avgCount);
+
+//                 Serial.print(" TOF=");
+//                 Serial.println(readTOFFiltered());
+//             }
+            // static elapsedMillis lineDebug;
+
+            // if(lineDebug > 100)
+            // {
+            //     lineDebug = 0;
+
+            //     Serial.print("L=");
+            //     Serial.print(digitalRead(LINE_LEFT_PIN));
+
+            //     Serial.print(" R=");
+            //     Serial.print(digitalRead(LINE_RIGHT_PIN));
+
+            //     Serial.print(" LC=");
+            //     Serial.print(leftLineCount);
+
+            //     Serial.print(" RC=");
+            //     Serial.println(rightLineCount);
+            // }
+            // Serial.print("Yaw=");
+            // Serial.print(currentYaw);
+
+            // Serial.print(" Target=");
+            // Serial.print(targetYaw);
+
+            // Serial.print(" Omega=");
+            // Serial.println(omega);
+
+            // Serial.print("LEFT=");
+            // Serial.print(leftLineCount);
+
+            // Serial.print("  RIGHT=");
+            // Serial.println(rightLineCount);
+            static elapsedMillis dbg;
+
+if(dbg > 200)
+{
+    dbg = 0;
+
+    Serial.print("STATE=");
+    Serial.print(state);
+
+    Serial.print(" MOVE=");
+    Serial.println(moveType);
+}
+
+}
+}
+
+
+
+
+
+
+        // Serial.print(" Int:");
+        // Serial.println(FR.integral);
+    
+
+//==========================ĐO==============================//
+// int pwmTest = 255;
+
+// void loop()
+// {
+//     setMotor(pwmTest,
+//              FL_RPWM,
+//              FL_LPWM);
+
+//     static elapsedMillis t;
+
+//     if(t > 10)
+//     {
+//         t = 0;
+
+//         static long last = 0;
+
+//         long now = encFL.read();
+
+//         long speed = now - last;
+
+//         last = now;
+
+//         Serial.print("PWM=");
+//         Serial.print(pwmTest);
+
+//         Serial.print(" Speed=");
+//         Serial.println(speed);
+//     }
+// }

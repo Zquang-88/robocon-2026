@@ -1,0 +1,92 @@
+#include <Arduino.h>
+
+// =====================================================
+// TEENSY 4.1 GỬI LỆNH CHO ESP32
+// =====================================================
+// Teensy 4.1 Serial4:
+// RX4 = pin 16
+// TX4 = pin 17
+#define UART_ESP32 Serial5
+
+// CHUỖI GỬI LỆNH CHO ESP32
+String commands[] = {
+  "NANG_B",
+  "HA_A",
+  "HA_AB_1",
+  "NANG_AB_1",
+  "HA_AB_2",
+  "NANG_AB_2"
+};
+
+// TỔNG SỐ LỆNH
+const int totalCommands = 6;
+
+// LỆNH HIỆN TẠI
+int currentCommand = 0;
+
+// BIẾN CHỜ ESP32 BÁO DONE
+bool waitingDone = false;
+
+// =====================================================
+// HÀM GỬI LỆNH TỪ TEENSY SANG ESP32
+// =====================================================
+void sendCommand(String cmd)
+{
+  UART_ESP32.println(cmd);
+
+  Serial.print("Teensy da gui lenh cho ESP32: ");
+  Serial.println(cmd);
+
+  waitingDone = true;
+}
+
+void setup()
+{
+  // Giao tiếp Teensy với máy tính
+  Serial.begin(115200);
+  delay(1000);
+
+  // Giao tiếp Teensy với ESP32
+  // 9600 baud, 8 bit data, no parity, 1 stop bit
+  UART_ESP32.begin(115200, SERIAL_8N1);
+
+  Serial.println("TEENSY 4.1 - UART SENDER READY");
+  Serial.println("Dang cho ESP32 khoi dong...");
+  delay(3000);
+
+  // Gửi lệnh đầu tiên
+  sendCommand(commands[currentCommand]);
+}
+
+void loop()
+{
+  // Kiểm tra ESP32 có gửi dữ liệu về chưa
+  if (UART_ESP32.available())
+  {
+    String dataNhan = UART_ESP32.readStringUntil('\n');
+    dataNhan.trim();
+
+    Serial.print("Teensy nhan duoc tu ESP32: ");
+    Serial.println(dataNhan);
+
+    // Nếu ESP32 báo DONE thì gửi lệnh tiếp theo
+    if (dataNhan == "DONE")
+    {
+      Serial.println("ESP32 bao da hoan thanh");
+
+      waitingDone = false;
+      currentCommand++;
+
+      if (currentCommand < totalCommands)
+      {
+        delay(1000);
+        sendCommand(commands[currentCommand]);
+      }
+      else
+      {
+        Serial.println("TOAN BO CHU TRINH DA HOAN THANH");
+        while (1);
+      }
+    }
+  }
+}

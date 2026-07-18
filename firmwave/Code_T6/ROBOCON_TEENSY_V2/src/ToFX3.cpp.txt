@@ -1,0 +1,46 @@
+#include <Wire.h>
+
+void setup()
+{
+    Serial.begin(115200);
+
+    Wire1.begin();
+    Wire1.setClock(400000);
+
+    while (!Serial)
+        ;
+
+    Serial.println("\nI2C Scanner (Wire1)");
+}
+
+void loop()
+{
+    byte error;
+    int count = 0;
+
+    Serial.println("Scanning...");
+
+    for (uint8_t address = 1; address < 127; address++)
+    {
+        Wire1.beginTransmission(address);
+        error = Wire1.endTransmission();
+
+        if (error == 0)
+        {
+            Serial.print("Found: 0x");
+
+            if (address < 16)
+                Serial.print("0");
+
+            Serial.println(address, HEX);
+
+            count++;
+        }
+    }
+
+    if (count == 0)
+        Serial.println("No I2C device found");
+
+    Serial.println("----------------");
+    delay(2000);
+}

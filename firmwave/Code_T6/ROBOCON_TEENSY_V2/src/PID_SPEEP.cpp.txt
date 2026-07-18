@@ -1,0 +1,264 @@
+#include <Arduino.h>
+#include <Encoder.h>
+
+// ================= ENCODER =================
+Encoder encFL(18, 19);
+Encoder encFR(22, 23);
+Encoder encBL(15, 14);
+Encoder encBR(29, 28);
+
+// ================= MOTOR ===================
+#define FL_RPWM 36
+#define FL_LPWM 37
+
+#define FR_RPWM 4
+#define FR_LPWM 5
+
+#define BL_RPWM 25
+#define BL_LPWM 24
+
+#define BR_RPWM 3
+#define BR_LPWM 2
+
+// ===========================================
+struct MotorPID
+{
+    float kp;
+    float ki;
+    float kd;
+
+    int feedForward;
+
+    float targetSpeed;
+    float currentSpeed;
+
+    float integral;
+    float lastError;
+
+    int pwm;
+};
+
+MotorPID FL;
+MotorPID FR;
+MotorPID BL;
+MotorPID BR;
+
+// ===========================================
+long lastFL = 0;
+long lastFR = 0;
+long lastBL = 0;
+long lastBR = 0;
+
+elapsedMillis pidTimer;
+
+// ===========================================
+void setMotor(int pwm,
+              int RPWM,
+              int LPWM)
+{
+    pwm = constrain(pwm, -255, 255);
+
+    if(pwm > 0)
+    {
+        analogWrite(RPWM, pwm);
+        analogWrite(LPWM, 0);
+    }
+    else if(pwm < 0)
+    {
+        analogWrite(RPWM, 0);
+        analogWrite(LPWM, -pwm);
+    }
+    else
+    {
+        analogWrite(RPWM, 0);
+        analogWrite(LPWM, 0);
+    }
+}
+
+// ===========================================
+void updatePID(MotorPID &m)
+{
+    float error =
+        m.targetSpeed -
+        m.currentSpeed;
+
+    m.integral += error;
+
+    m.integral =
+        constrain(m.integral,
+                  -500,
+                  500);
+
+    float derivative =
+        error - m.lastError;
+
+    float output =
+        m.kp * error +
+        m.ki * m.integral +
+        m.kd * derivative;
+
+    m.lastError = error;
+
+    m.pwm =
+        m.feedForward +
+        output;
+
+    if(m.targetSpeed == 0)
+    {
+        m.pwm = 0;
+        m.integral = 0;
+    }
+
+    m.pwm =
+        constrain(m.pwm,
+                  -255,
+                  255);
+}
+
+// ===========================================
+void setupPID()
+{
+    // ===== FL =====
+    FL.kp = 0.0;
+    FL.ki = 0.0;
+    FL.kd = 0.0;
+    FL.feedForward = 35;
+
+    // ===== FR =====
+    FR.kp = 3.0;
+    FR.ki = 0.25;
+    FR.kd = 0.02;
+    FR.feedForward = 35;
+
+    // ===== BL =====
+    BL.kp = 3.0;
+    BL.ki = 0.25;
+    BL.kd = 0.02;
+    BL.feedForward = 35;
+
+    // ===== BR =====
+    BR.kp = 3.0;
+    BR.ki = 0.25;
+    BR.kd = 0.02;
+    BR.feedForward = 35;
+}
+
+// ===========================================
+void setup()
+{
+    Serial.begin(115200);
+
+    pinMode(FL_RPWM, OUTPUT);
+    pinMode(FL_LPWM, OUTPUT);
+
+    pinMode(FR_RPWM, OUTPUT);
+    pinMode(FR_LPWM, OUTPUT);
+
+    pinMode(BL_RPWM, OUTPUT);
+    pinMode(BL_LPWM, OUTPUT);
+
+    pinMode(BR_RPWM, OUTPUT);
+    pinMode(BR_LPWM, OUTPUT);
+
+    analogWriteResolution(8);
+
+    analogWriteFrequency(FL_RPWM, 20000);
+    analogWriteFrequency(FL_LPWM, 20000);
+
+    analogWriteFrequency(FR_RPWM, 20000);
+    analogWriteFrequency(FR_LPWM, 20000);
+
+    analogWriteFrequency(BL_RPWM, 20000);
+    analogWriteFrequency(BL_LPWM, 20000);
+
+    analogWriteFrequency(BR_RPWM, 20000);
+    analogWriteFrequency(BR_LPWM, 20000);
+
+    setupPID();
+
+    // test
+    FL.targetSpeed = 100;
+    FR.targetSpeed = 0;
+    BL.targetSpeed = 0;
+    BR.targetSpeed = 0;
+}
+
+// ===========================================
+void loop()
+{
+    if(pidTimer >= 10)
+    {
+        pidTimer = 0;
+
+        long nowFL = encFL.read();
+        long nowFR = encFR.read();
+        long nowBL = encBL.read();
+        long nowBR = encBR.read();
+
+        FL.currentSpeed =
+            nowFL - lastFL;
+
+        FR.currentSpeed =
+            nowFR - lastFR;
+
+        BL.currentSpeed =
+            nowBL - lastBL;
+
+        BR.currentSpeed =
+            nowBR - lastBR;
+
+        lastFL = nowFL;
+        lastFR = nowFR;
+        lastBL = nowBL;
+        lastBR = nowBR;
+
+        // Nếu encoder bên phải ngược chiều
+        // FR.currentSpeed *= -1;
+        // BR.currentSpeed *= -1;
+
+        updatePID(FL);
+        updatePID(FR);
+        updatePID(BL);
+        updatePID(BR);
+
+        setMotor(
+            FL.pwm,
+            FL_RPWM,
+            FL_LPWM);
+
+        setMotor(
+            FR.pwm,
+            FR_RPWM,
+            FR_LPWM);
+
+        setMotor(
+            BL.pwm,
+            BL_RPWM,
+            BL_LPWM);
+
+        setMotor(
+            BR.pwm,
+            BR_RPWM,
+            BR_LPWM);
+
+        Serial.print("FL:");
+        Serial.print(FL.currentSpeed);
+        Serial.print(" PWM:");
+        Serial.print(FL.pwm);
+
+        Serial.print(" | FR:");
+        Serial.print(FR.currentSpeed);
+        Serial.print(" PWM:");
+        Serial.print(FR.pwm);
+
+        Serial.print(" | BL:");
+        Serial.print(BL.currentSpeed);
+        Serial.print(" PWM:");
+        Serial.print(BL.pwm);
+
+        Serial.print(" | BR:");
+        Serial.print(BR.currentSpeed);
+        Serial.print(" PWM:");
+        Serial.println(BR.pwm);
+    }
+}
