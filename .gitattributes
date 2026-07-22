@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+cad/backup[[:space:]]v5.step filter=lfs diff=lfs merge=lfs -text
+cad/DEMO_T9_V4.step filter=lfs diff=lfs merge=lfs -text
+cad/MÔ[[:space:]]HÌNH.step filter=lfs diff=lfs merge=lfs -text
