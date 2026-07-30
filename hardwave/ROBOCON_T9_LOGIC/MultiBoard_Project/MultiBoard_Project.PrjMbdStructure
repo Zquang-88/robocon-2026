@@ -1,0 +1,4 @@
+Record=DiagramHierarchy|SourceDocument=MultiBoardSchematic1.MbsDoc|Kind=Multi-board Schematic Module|Designator=DRIVER|Source=..\ROBOCON_T9_LOGIC.PrjPcb
+Record=SubProject|SourceDocument=MultiBoardSchematic1.MbsDoc|ProjectPath=..\ROBOCON_T9_LOGIC.PrjPcb
+Record=DiagramHierarchy|SourceDocument=MultiBoardSchematic1.MbsDoc|Kind=Multi-board Schematic Module|Designator=LOGIC|Source=..\..\ROBOCON_T9_V1\ROBOCON_T9_CS.PrjPcb
+Record=SubProject|SourceDocument=MultiBoardSchematic1.MbsDoc|ProjectPath=..\..\ROBOCON_T9_V1\ROBOCON_T9_CS.PrjPcb
