@@ -34,7 +34,6 @@ uint16_t crc16Ccitt(const uint8_t *data, size_t length, uint16_t initial) {
   }
   return crc;
 }
-
 size_t encodePacket(PacketType type, uint32_t sequence, uint32_t timestampMs,
                     const void *payload, uint16_t payloadLength,
                     uint8_t *output, size_t outputCapacity) {
