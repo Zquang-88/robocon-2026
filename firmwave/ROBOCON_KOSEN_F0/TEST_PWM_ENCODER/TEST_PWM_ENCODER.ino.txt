@@ -1,0 +1,506 @@
+#include <Arduino.h>
+
+/* =========================================================
+   1. KHAI BÁO CHÂN ENCODER
+   Thay PIN_HERE bằng chân thực tế
+   ========================================================= */
+
+// Front Left
+#define ENC_FL_A 0
+#define ENC_FL_B 1
+
+// Front Right
+#define ENC_FR_A 6
+#define ENC_FR_B 7
+
+// Rear Left
+#define ENC_RL_A 2
+#define ENC_RL_B 3
+
+// Rear Right
+#define ENC_RR_A 4
+#define ENC_RR_B 5
+
+/* =========================================================
+   2. KHAI BÁO CHÂN BTS7960
+   Mỗi động cơ sử dụng RPWM và LPWM
+   ========================================================= */
+
+// Front Left
+#define FL_RPWM 36
+#define FL_LPWM 37
+
+// Front Right
+#define FR_RPWM 22
+#define FR_LPWM 23
+
+// Rear Left
+#define RL_RPWM 14
+#define RL_LPWM 15
+
+// Rear Right
+#define RR_RPWM 18
+#define RR_LPWM 19
+
+/* =========================================================
+   3. CẤU HÌNH
+   ========================================================= */
+
+#define PWM_MAX       255
+#define TEST_PWM      120
+#define PRINT_TIME_MS 100
+
+// Đổi thành -1 nếu động cơ quay ngược chiều mong muốn
+#define MOTOR_FL_DIRECTION  1
+#define MOTOR_FR_DIRECTION  -1
+#define MOTOR_RL_DIRECTION  -1
+#define MOTOR_RR_DIRECTION  1
+
+// Đổi thành -1 nếu encoder đếm ngược chiều
+#define ENCODER_FL_DIRECTION  1
+#define ENCODER_FR_DIRECTION  -1
+#define ENCODER_RL_DIRECTION  -1
+#define ENCODER_RR_DIRECTION  -1
+
+/* =========================================================
+   4. BIẾN ENCODER
+   ========================================================= */
+
+volatile int32_t encoderFL = 0;
+volatile int32_t encoderFR = 0;
+volatile int32_t encoderRL = 0;
+volatile int32_t encoderRR = 0;
+
+volatile uint8_t lastStateFL = 0;
+volatile uint8_t lastStateFR = 0;
+volatile uint8_t lastStateRL = 0;
+volatile uint8_t lastStateRR = 0;
+
+/*
+   Bảng giải mã Quadrature X4
+*/
+const int8_t QUADRATURE_TABLE[16] = {
+   0, -1,  1,  0,
+   1,  0,  0, -1,
+  -1,  0,  0,  1,
+   0,  1, -1,  0
+};
+
+/* =========================================================
+   5. ĐỌC TRẠNG THÁI ENCODER
+   ========================================================= */
+
+inline uint8_t readEncoderState(uint8_t pinA, uint8_t pinB) {
+  uint8_t stateA = digitalReadFast(pinA);
+  uint8_t stateB = digitalReadFast(pinB);
+
+  return (stateA << 1) | stateB;
+}
+
+/* =========================================================
+   6. INTERRUPT ENCODER
+   ========================================================= */
+
+void updateEncoderFL() {
+  uint8_t currentState =
+      readEncoderState(ENC_FL_A, ENC_FL_B);
+
+  uint8_t transition =
+      (lastStateFL << 2) | currentState;
+
+  encoderFL +=
+      QUADRATURE_TABLE[transition] *
+      ENCODER_FL_DIRECTION;
+
+  lastStateFL = currentState;
+}
+
+void updateEncoderFR() {
+  uint8_t currentState =
+      readEncoderState(ENC_FR_A, ENC_FR_B);
+
+  uint8_t transition =
+      (lastStateFR << 2) | currentState;
+
+  encoderFR +=
+      QUADRATURE_TABLE[transition] *
+      ENCODER_FR_DIRECTION;
+
+  lastStateFR = currentState;
+}
+
+void updateEncoderRL() {
+  uint8_t currentState =
+      readEncoderState(ENC_RL_A, ENC_RL_B);
+
+  uint8_t transition =
+      (lastStateRL << 2) | currentState;
+
+  encoderRL +=
+      QUADRATURE_TABLE[transition] *
+      ENCODER_RL_DIRECTION;
+
+  lastStateRL = currentState;
+}
+
+void updateEncoderRR() {
+  uint8_t currentState =
+      readEncoderState(ENC_RR_A, ENC_RR_B);
+
+  uint8_t transition =
+      (lastStateRR << 2) | currentState;
+
+  encoderRR +=
+      QUADRATURE_TABLE[transition] *
+      ENCODER_RR_DIRECTION;
+
+  lastStateRR = currentState;
+}
+
+/* =========================================================
+   7. ĐIỀU KHIỂN MỘT BTS7960
+   pwm: -255 đến +255
+
+   pwm > 0: quay thuận
+   pwm < 0: quay nghịch
+   pwm = 0: dừng
+   ========================================================= */
+
+void setBTS7960(
+    uint8_t pinRPWM,
+    uint8_t pinLPWM,
+    int16_t pwm) {
+
+  pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
+
+  if (pwm > 0) {
+    // Quay thuận
+    analogWrite(pinRPWM, pwm);
+    analogWrite(pinLPWM, 0);
+  }
+  else if (pwm < 0) {
+    // Quay nghịch
+    analogWrite(pinRPWM, 0);
+    analogWrite(pinLPWM, -pwm);
+  }
+  else {
+    // Dừng thả động cơ
+    analogWrite(pinRPWM, 0);
+    analogWrite(pinLPWM, 0);
+  }
+}
+
+/* =========================================================
+   8. HÀM ĐIỀU KHIỂN TỪNG ĐỘNG CƠ
+   ========================================================= */
+
+void setMotorFL(int16_t pwm) {
+  setBTS7960(
+      FL_RPWM,
+      FL_LPWM,
+      pwm * MOTOR_FL_DIRECTION);
+}
+
+void setMotorFR(int16_t pwm) {
+  setBTS7960(
+      FR_RPWM,
+      FR_LPWM,
+      pwm * MOTOR_FR_DIRECTION);
+}
+
+void setMotorRL(int16_t pwm) {
+  setBTS7960(
+      RL_RPWM,
+      RL_LPWM,
+      pwm * MOTOR_RL_DIRECTION);
+}
+
+void setMotorRR(int16_t pwm) {
+  setBTS7960(
+      RR_RPWM,
+      RR_LPWM,
+      pwm * MOTOR_RR_DIRECTION);
+}
+
+/* =========================================================
+   9. ĐIỀU KHIỂN ĐỒNG THỜI 4 ĐỘNG CƠ
+   ========================================================= */
+
+void setMotors(
+    int16_t pwmFL,
+    int16_t pwmFR,
+    int16_t pwmRL,
+    int16_t pwmRR) {
+
+  setMotorFL(pwmFL);
+  setMotorFR(pwmFR);
+  setMotorRL(pwmRL);
+  setMotorRR(pwmRR);
+}
+
+void stopMotors() {
+  setMotors(0, 0, 0, 0);
+}
+
+/* =========================================================
+   10. RESET ENCODER
+   ========================================================= */
+
+void resetEncoders() {
+  noInterrupts();
+
+  encoderFL = 0;
+  encoderFR = 0;
+  encoderRL = 0;
+  encoderRR = 0;
+
+  interrupts();
+}
+
+/* =========================================================
+   11. IN GIÁ TRỊ ENCODER
+   ========================================================= */
+
+void printEncoders() {
+  int32_t countFL;
+  int32_t countFR;
+  int32_t countRL;
+  int32_t countRR;
+
+  noInterrupts();
+
+  countFL = encoderFL;
+  countFR = encoderFR;
+  countRL = encoderRL;
+  countRR = encoderRR;
+
+  interrupts();
+
+  Serial.print("FL: ");
+  Serial.print(countFL);
+
+  Serial.print("\tFR: ");
+  Serial.print(countFR);
+
+  Serial.print("\tRL: ");
+  Serial.print(countRL);
+
+  Serial.print("\tRR: ");
+  Serial.println(countRR);
+}
+
+/* =========================================================
+   12. XỬ LÝ LỆNH SERIAL
+   ========================================================= */
+
+void processSerialCommand(char command) {
+  switch (command) {
+    case 'F':
+    case 'f':
+      // Cả 4 động cơ quay thuận
+      setMotors(
+          TEST_PWM,
+          TEST_PWM,
+          TEST_PWM,
+          TEST_PWM);
+
+      Serial.println("4 dong co quay THUAN");
+      break;
+
+    case 'B':
+    case 'b':
+      // Cả 4 động cơ quay nghịch1
+      setMotors(
+          -TEST_PWM,
+          -TEST_PWM,
+          -TEST_PWM,
+          -TEST_PWM);
+
+      Serial.println("4 dong co quay NGHICH");
+      break;
+
+    case 'S':
+    case 's':
+      stopMotors();
+      Serial.println("DUNG 4 dong co");
+      break;
+
+    case 'R':
+    case 'r':
+      resetEncoders();
+      Serial.println("Da reset encoder");
+      break;
+
+    case '1':
+      stopMotors();
+      setMotorFL(TEST_PWM);
+      Serial.println("Test motor FL");
+      break;
+
+    case '2':
+      stopMotors();
+      setMotorFR(TEST_PWM);
+      Serial.println("Test motor FR");
+      break;
+
+    case '3':
+      stopMotors();
+      setMotorRL(TEST_PWM);
+      Serial.println("Test motor RL");
+      break;
+
+    case '4':
+      stopMotors();
+      setMotorRR(TEST_PWM);
+      Serial.println("Test motor RR");
+      break;
+
+    case '0':
+      stopMotors();
+      Serial.println("Dung tat ca dong co");
+      break;
+  }
+}
+
+/* =========================================================
+   13. SETUP
+   ========================================================= */
+
+void setup() {
+  Serial.begin(115200);
+
+  /* ---------- Encoder Input ---------- */
+
+  pinMode(ENC_FL_A, INPUT_PULLUP);
+  pinMode(ENC_FL_B, INPUT_PULLUP);
+
+  pinMode(ENC_FR_A, INPUT_PULLUP);
+  pinMode(ENC_FR_B, INPUT_PULLUP);
+
+  pinMode(ENC_RL_A, INPUT_PULLUP);
+  pinMode(ENC_RL_B, INPUT_PULLUP);
+
+  pinMode(ENC_RR_A, INPUT_PULLUP);
+  pinMode(ENC_RR_B, INPUT_PULLUP);
+
+  /* ---------- BTS7960 Output ---------- */
+
+  pinMode(FL_RPWM, OUTPUT);
+  pinMode(FL_LPWM, OUTPUT);
+
+  pinMode(FR_RPWM, OUTPUT);
+  pinMode(FR_LPWM, OUTPUT);
+
+  pinMode(RL_RPWM, OUTPUT);
+  pinMode(RL_LPWM, OUTPUT);
+
+  pinMode(RR_RPWM, OUTPUT);
+  pinMode(RR_LPWM, OUTPUT);
+
+  // PWM 8 bit: 0–255
+  analogWriteResolution(8);
+
+  // Tần số PWM 20 kHz
+  analogWriteFrequency(FL_RPWM, 20000);
+  analogWriteFrequency(FL_LPWM, 20000);
+
+  analogWriteFrequency(FR_RPWM, 20000);
+  analogWriteFrequency(FR_LPWM, 20000);
+
+  analogWriteFrequency(RL_RPWM, 20000);
+  analogWriteFrequency(RL_LPWM, 20000);
+
+  analogWriteFrequency(RR_RPWM, 20000);
+  analogWriteFrequency(RR_LPWM, 20000);
+
+  stopMotors();
+
+  /* ---------- Trạng thái encoder ban đầu ---------- */
+
+  lastStateFL =
+      readEncoderState(ENC_FL_A, ENC_FL_B);
+
+  lastStateFR =
+      readEncoderState(ENC_FR_A, ENC_FR_B);
+
+  lastStateRL =
+      readEncoderState(ENC_RL_A, ENC_RL_B);
+
+  lastStateRR =
+      readEncoderState(ENC_RR_A, ENC_RR_B);
+
+  /* ---------- Cài đặt ngắt encoder X4 ---------- */
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_FL_A),
+      updateEncoderFL,
+      CHANGE);
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_FL_B),
+      updateEncoderFL,
+      CHANGE);
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_FR_A),
+      updateEncoderFR,
+      CHANGE);
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_FR_B),
+      updateEncoderFR,
+      CHANGE);
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_RL_A),
+      updateEncoderRL,
+      CHANGE);
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_RL_B),
+      updateEncoderRL,
+      CHANGE);
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_RR_A),
+      updateEncoderRR,
+      CHANGE);
+
+  attachInterrupt(
+      digitalPinToInterrupt(ENC_RR_B),
+      updateEncoderRR,
+      CHANGE);
+
+  resetEncoders();
+
+  Serial.println("================================");
+  Serial.println("TEENSY 4.1 - 4 MOTOR + ENCODER");
+  Serial.println("F: quay thuan");
+  Serial.println("B: quay nghich");
+  Serial.println("S: dung");
+  Serial.println("R: reset encoder");
+  Serial.println("1: test FL");
+  Serial.println("2: test FR");
+  Serial.println("3: test RL");
+  Serial.println("4: test RR");
+  Serial.println("0: dung tat ca");
+  Serial.println("================================");
+}
+
+/* =========================================================
+   14. LOOP
+   ========================================================= */
+
+void loop() {
+  static uint32_t lastPrintTime = 0;
+
+  if (Serial.available()) {
+    char command = Serial.read();
+    processSerialCommand(command);
+  }
+
+  if (millis() - lastPrintTime >= PRINT_TIME_MS) {
+    lastPrintTime = millis();
+    printEncoders();
+  }
+}
