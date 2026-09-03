@@ -54,7 +54,7 @@ constexpr uint8_t RR_ENC_A = 4, RR_ENC_B = 5;
 
 constexpr int PWM_FREQUENCY_HZ = 20000;
 constexpr int PWM_MAX = 255;
-constexpr float MAX_WHEEL_SPEED_MM_S = 1100.0f;
+constexpr float MAX_WHEEL_SPEED_MM_S = 1300.0f;
 constexpr float WHEEL_SPEED_FILTER_ALPHA = 0.35f;
 constexpr uint32_t CONTROL_PERIOD_US = 10000; // 100 Hz
 
@@ -88,8 +88,14 @@ constexpr float MAX_HEADING_WZ_RAD_S = 1.2f;
 constexpr float MAX_MANUAL_HEADING_WZ_RAD_S = 0.60f;
 constexpr float MAX_AUTO_HEAD_LOCK_WZ_RAD_S = 1.00f;
 constexpr float MAX_LINE_ALIGN_WZ_RAD_S = 0.45f;
+constexpr float MAX_BRIDGE_HEADING_WZ_RAD_S = 0.25f;
 constexpr float HEADING_OUTPUT_DEADBAND_DEG = 0.50f;
 constexpr float HEADING_MIN_WZ_RAD_S = 0.18f;
+constexpr float FINE_HEADING_KP = 0.120f;
+constexpr float FINE_HEADING_KD = 0.0030f;
+constexpr float FINE_HEADING_DEADBAND_DEG = 0.25f;
+constexpr float FINE_HEADING_MIN_WZ_RAD_S = 0.180f;
+constexpr float FINE_HEADING_MAX_WZ_RAD_S = 0.35f;
 
 // ---------------- Two MCP3008 devices ----------------
 constexpr uint8_t MCP_CENTER_CS = 26; // CH0..7: eight center sensors
@@ -127,7 +133,7 @@ constexpr float LINE_KD = 0.003f;
 constexpr int8_t CENTER_LINE_CONTROL_SIGN = -1;
 // Mecanum lateral authority while following the bridge line. This must be
 // comparable to forward speed or the robot cannot recover near an edge.
-constexpr float MAX_LINE_VY_MM_S = 400.0f;
+constexpr float MAX_LINE_VY_MM_S = 220.0f;
 constexpr float LINE_LOST_SEARCH_VY_MM_S = 140.0f;
 
 // Local order for both mirrored side arrays: outside / middle / inside.
@@ -156,16 +162,20 @@ constexpr uint32_t PICK_LINE_CONFIRM_MS = 8;
 constexpr uint32_t PICK_LINE_CLEAR_MS = 60;
 constexpr uint32_t X_ALIGN_STABLE_TIME_MS = 180;
 constexpr uint32_t LINE_SEARCH_TIMEOUT_MS = 5000;
-constexpr uint32_t HEADING_STABLE_TIME_MS = 150;
-constexpr float HEADING_TOLERANCE_DEG = 2.0f;
-constexpr float MOVE_LEFT_SPEED_MM_S = 300.0f;
+constexpr uint32_t HEADING_STABLE_TIME_MS = 80;
+constexpr float HEADING_TOLERANCE_DEG = 0.60f;
+constexpr float MOVE_LEFT_SPEED_MM_S = 400.0f;
+// Lateral scan from point B to the third center-array line.
+constexpr float BRIDGE_LATERAL_SCAN_SPEED_MM_S = 500.0f;
 constexpr float X_ALIGN_MAX_SPEED_MM_S = 80.0f;
 constexpr float X_ALIGN_SEARCH_SPEED_MM_S = 35.0f;
 constexpr float TOF_ALIGN_MAX_SPEED_MM_S = 100.0f;
-constexpr float BRIDGE_FORWARD_SPEED_MM_S = 900.0f;
-constexpr float BRIDGE_MIN_FORWARD_SPEED_MM_S = 580.0f; // Minimum while center line remains valid on ramp
+constexpr float BRIDGE_FORWARD_SPEED_MM_S = 1150.0f;
+constexpr float BRIDGE_MIN_FORWARD_SPEED_MM_S = 950.0f; // Minimum while center line remains valid on ramp
 constexpr float BRIDGE_ENTRY_CENTER_KP = 0.08f;
-constexpr float BRIDGE_ENTRY_CENTER_MAX_VY_MM_S = 80.0f;
+// Minimum command overcomes drivetrain stiction while centering on line 3.
+constexpr float BRIDGE_ENTRY_CENTER_MIN_VY_MM_S = 90.0f;
+constexpr float BRIDGE_ENTRY_CENTER_MAX_VY_MM_S = 140.0f;
 constexpr float BRIDGE_ENTRY_CENTER_TOLERANCE = 300.0f;
 constexpr uint32_t BRIDGE_ENTRY_CENTER_CONFIRM_MS = 80;
 // Stop this commissioning route after the center array has followed the
@@ -208,7 +218,7 @@ constexpr float LATERAL_SLIP_THRESHOLD_MM_S = 180.0f;
 // BNO085 uses 0x4A and VL53L3CX uses its default address 0x29.
 constexpr bool TOF_ENABLED = true;
 constexpr uint8_t TOF_I2C_ADDRESS = 0x29;
-constexpr uint16_t TOF_TARGET_MM = 300;
+constexpr uint16_t TOF_TARGET_MM = 220;
 constexpr uint16_t TOF_MIN_VALID_MM = 35;
 constexpr uint16_t TOF_MAX_VALID_MM = 800;
 // Reject implausible single-step jumps caused by VL53L3CX ghost targets.
@@ -275,9 +285,9 @@ constexpr float RETURN_LATERAL_MM = 1650.0f;
 constexpr float MOVE_SPEED_MM_S = 450.0f;
 // Commissioning limits: do not jump from the 180 mm/s acquisition speed to
 // 700 mm/s. Ramp up only after the center line is confirmed.
-constexpr float BRIDGE_SPEED_FAST_MM_S = 900.0f;
-constexpr float BRIDGE_SPEED_SLOW_MM_S = 580.0f;
-constexpr float BRIDGE_ACCEL_MM_S2 = 1100.0f;
+constexpr float BRIDGE_SPEED_FAST_MM_S = 1150.0f;
+constexpr float BRIDGE_SPEED_SLOW_MM_S = 1000.0f;
+constexpr float BRIDGE_ACCEL_MM_S2 = 1800.0f;
 constexpr float BRIDGE_DECEL_MM_S2 = 700.0f;
 
 inline bool dimensionsValid() {
@@ -297,11 +307,3 @@ inline float mecanumKmm() {
 }
 
 } // namespace RobotConfig
-
-
-
-
-
-
-
-

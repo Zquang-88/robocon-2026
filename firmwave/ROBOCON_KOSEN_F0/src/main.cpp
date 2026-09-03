@@ -183,6 +183,7 @@ sh2_SensorValue_t bnoEvent;
 VL53L3C tof;
 
 PID headingPid(HEADING_KP, HEADING_KI, HEADING_KD, HEADING_INTEGRAL_LIMIT);
+PID fineHeadingPid(FINE_HEADING_KP, 0.0f, FINE_HEADING_KD, 0.0f);
 PID linePid(LINE_KP, LINE_KI, LINE_KD, 2500.0f);
 PID positionXPid(1.4f, 0.05f, 0.01f, 400.0f);
 PID positionYPid(1.4f, 0.05f, 0.01f, 400.0f);
@@ -240,6 +241,7 @@ char lastEspResponse[16] = "NONE";
 float robotVx = 0, robotVy = 0, robotWz = 0;
 float positionErrorX = 0, positionErrorY = 0;
 float currentYawDeg = 0, targetYawDeg = 0, yawReferenceDeg = 0;
+float competitionHeadingDeg = 0.0f; // Captured once at START and held through A/B
 float tofDistanceMm = 0;
 float lateralSlipMmS = 0;
 uint32_t lastBnoMs = 0, lastTofMs = 0;
@@ -634,6 +636,20 @@ float headingControl(float dt, float limit = MAX_HEADING_WZ_RAD_S) {
   // Outside the deadband, ensure the correction can overcome drivetrain
   // stiction. Never exceed the limit requested by the active motion mode.
   const float minimum = min(headingMinWzRadS, limit);
+  if (output * error > 0.0f && fabsf(output) < minimum)
+    output = copysignf(minimum, error);
+  return constrain(output, -limit, limit);
+}
+
+float headingControlFine(float dt, float limit = FINE_HEADING_MAX_WZ_RAD_S) {
+  if (!bnoValid) return 0.0f;
+  const float error = shortestAngleError(targetYawDeg, currentYawDeg);
+  if (fabsf(error) <= FINE_HEADING_DEADBAND_DEG) {
+    fineHeadingPid.reset();
+    return 0.0f;
+  }
+  float output = fineHeadingPid.updateError(error, dt, -limit, limit);
+  const float minimum = min(FINE_HEADING_MIN_WZ_RAD_S, limit);
   if (output * error > 0.0f && fabsf(output) < minimum)
     output = copysignf(minimum, error);
   return constrain(output, -limit, limit);
@@ -1076,7 +1092,7 @@ bool updateRelativeMove(float dt) {
     const float scale=moveCommand.maxSpeed/translationMagnitude;
     vx*=scale;vy*=scale;
   }
-  setRobotVelocity(vx,vy,headingControl(dt,MAX_POSITION_HEADING_WZ_RAD_S));
+  setRobotVelocity(vx,vy,headingControlFine(dt));
   return false;
 }
 
@@ -1133,7 +1149,7 @@ bool updateTofAlignment(float dt) {
   const float speed=min(TOF_ALIGN_MAX_SPEED_MM_S,
                         fabsf(error)>60?TOF_COARSE_SPEED_MM_S:TOF_FINE_SPEED_MM_S);
   const float vx=TOF_CONTROL_SIGN*tofDistancePid.updateError(error,dt,-speed,speed);
-  setRobotVelocity(vx,0,headingControl(dt,MAX_LINE_ALIGN_WZ_RAD_S));
+  setRobotVelocity(vx,0,headingControlFine(dt));
   return false;
 }
 
@@ -1277,12 +1293,13 @@ bool updateAutoPickTravel(float dt,bool rightGroup,uint8_t targetCount){
   // for two control samples. Latch that event here; BU_TAM_A/B still requires
   // the middle eye or 2/3 eyes before accepting final alignment.
   const bool onLine=activeForCount>=1;
-  const bool approachingTarget=onLine&&counter.count+1>=targetCount;
+  const bool approachingTarget=onLine&&!counter.latched&&
+                               counter.count+1>=targetCount;
   counter.update(onLine,PICK_LINE_CONFIRM_MS,PICK_LINE_CLEAR_MS);
   const float travelSpeed=approachingTarget?MOVE_LEFT_SPEED_MM_S*0.30f:
                                             MOVE_LEFT_SPEED_MM_S;
   setRobotVelocity(0,selectedFieldLateralSign()*travelSpeed,
-                   headingControl(dt,MAX_LINE_ALIGN_WZ_RAD_S));
+                   headingControlFine(dt));
   if(counter.count<targetCount)return false;
   stopRobot();return true;
 }
@@ -1308,7 +1325,7 @@ bool updateAutoPickX(float dt,bool rightGroup){
                                    -X_ALIGN_MAX_SPEED_MM_S,
                                     X_ALIGN_MAX_SPEED_MM_S);
   }
-  setRobotVelocity(0,vy,headingControl(dt,MAX_LINE_ALIGN_WZ_RAD_S));
+  setRobotVelocity(0,vy,headingControlFine(dt));
   return false;
 }
 
@@ -1322,7 +1339,8 @@ bool autoHeadingAligned(){
 }
 
 bool autoPickVerified(){
-  yAligned=tofValid&&fabsf(TOF_TARGET_MM-tofDistanceMm)<=TOF_TOLERANCE_MM;
+  // X and ToF were already confirmed continuously in the preceding states.
+  // Keep those results latched while final heading correction rotates the chassis.
   return xAligned&&yAligned&&autoHeadingAligned();
 }
 
@@ -1500,11 +1518,13 @@ void processCommand(const char *line) {
     if(loadPersistentPidConfig()){sendTunerConfig();Serial.println("ACK,PROFILE_LOAD");}
     else Serial.println("ERR,NO_SAVED_CONFIG");}
   else if(strcmp(line,"MODE,MANUAL")==0){
+    if(armed){Serial.println("ERR,DISARM_BEFORE_MODE_CHANGE");return;}
     supervisedAutoRun=false;testMode=TEST_NONE;armed=false;moveCommand.active=false;stopRobot();
     transitionTo(WAIT_START);controlMode=CONTROL_MANUAL;
     Serial.println("ACK,MODE,MANUAL");
   }
   else if(strcmp(line,"MODE,AUTO")==0){
+    if(armed){Serial.println("ERR,DISARM_BEFORE_MODE_CHANGE");return;}
     supervisedAutoRun=false;testMode=TEST_NONE;armed=false;moveCommand.active=false;stopRobot();
     transitionTo(WAIT_START);controlMode=CONTROL_AUTO;
     if(bnoValid)targetYawDeg=currentYawDeg;
@@ -1545,7 +1565,7 @@ void processCommand(const char *line) {
     if(!competitionConfigurationValid()){
       Serial.println("ERR,AUTO_LOCKED: VERIFY_SIGNS_LINE_CALIBRATION_SENSOR_ORDER_AND_ESP_UART");return;}
     supervisedAutoRun=false;testMode=TEST_NONE;armed=true;resetAllControllers();resetPose();
-    targetYawDeg=currentYawDeg;transitionTo(CAN_START);Serial.println("ACK,START");
+    competitionHeadingDeg=currentYawDeg;targetYawDeg=competitionHeadingDeg;transitionTo(CAN_START);Serial.println("ACK,START");
   }else if(strcmp(line,"START_TEST")==0){
     if(controlMode!=CONTROL_AUTO){Serial.println("ERR,MODE_AUTO_REQUIRED");return;}
     if(stopInputActive()){Serial.println("ERR,STOP_ACTIVE");return;}
@@ -1553,7 +1573,7 @@ void processCommand(const char *line) {
     if(!competitionConfigurationValid()){
       Serial.println("ERR,AUTO_LOCKED: VERIFY_SIGNS_LINE_CALIBRATION_SENSOR_ORDER_AND_ESP_UART");return;}
     testMode=TEST_NONE;armed=true;resetAllControllers();resetPose();
-    targetYawDeg=currentYawDeg;lastTunerHeartbeatMs=millis();supervisedAutoRun=true;
+    competitionHeadingDeg=currentYawDeg;targetYawDeg=competitionHeadingDeg;lastTunerHeartbeatMs=millis();supervisedAutoRun=true;
     transitionTo(CAN_START);Serial.println("ACK,START_TEST");
   }else if(strcmp(line,"START_BRIDGE_TEST")==0){
     if(controlMode!=CONTROL_AUTO){Serial.println("ERR,MODE_AUTO_REQUIRED");return;}
@@ -1865,8 +1885,8 @@ void onEnterState() {
     case WAIT_START: armed=false;stopRobot();stateTimeoutMs=0;break;
     case CAN_START:
       tofAcceptanceEnabled=false;tofValid=false;tofSampleIndex=0;tofSampleCount=0;
-      if(bnoValid)targetYawDeg=currentYawDeg;
-      headingPid.reset();
+      targetYawDeg=competitionHeadingDeg;
+      headingPid.reset();fineHeadingPid.reset();
       beginRelativeMove(START_ENCODER_DISTANCE_MM,0,START_ENCODER_SPEED_MM_S);
       stateTimeoutMs=5000;break;
     case CAN_START_FAST:
@@ -1883,7 +1903,7 @@ void onEnterState() {
     case CAN_YAW_A:
       yAligned=false;tofDistancePid.reset();stateTimeoutMs=8000;break;
     case CAN_A:
-      autoHeadingStableSince=0;stateTimeoutMs=2000;break;
+      autoHeadingStableSince=0;stateTimeoutMs=3000;break;
     case DOI_GAP_A: sendEsp("POINT_A");stateTimeoutMs=ESP32_REPLY_TIMEOUT_MS;break;
     case DI_SANG_TRAI_B:
       rightAutoCounter.reset();leftAutoCounter.reset();stateTimeoutMs=15000;break;
@@ -1893,7 +1913,7 @@ void onEnterState() {
     case CAN_YAW_B:
       yAligned=false;tofDistancePid.reset();stateTimeoutMs=8000;break;
     case CAN_B:
-      autoHeadingStableSince=0;stateTimeoutMs=2000;break;
+      autoHeadingStableSince=0;stateTimeoutMs=3000;break;
     case DOI_GAP_B: sendEsp("POINT_B");stateTimeoutMs=ESP32_REPLY_TIMEOUT_MS;break;
     case DI_SANG_C:
       bridgeAutoCounter.reset();bridgeEntryCenterStableSince=0;
@@ -1946,7 +1966,7 @@ void updateCompetition(float dt) {
   switch(state){
     case CAN_START:
       if(updateRelativeMove(dt)){
-        stopRobot();resetPose(0,0,currentYawDeg);targetYawDeg=currentYawDeg;
+        stopRobot();resetPose(0,0,currentYawDeg);targetYawDeg=competitionHeadingDeg;
         tofAcceptanceEnabled=true;tofValid=false;tofSampleIndex=0;tofSampleCount=0;
         transitionTo(DI_SANG_TRAI_A);
         Serial.println("ACK,AUTO_START_ENCODER_200MM_DONE");
@@ -1958,7 +1978,7 @@ void updateCompetition(float dt) {
       break;
     case CAN_START_FINE:
       if(updateTofAlignment(dt)){
-        stopRobot();resetPose(0,0,currentYawDeg);targetYawDeg=currentYawDeg;
+        stopRobot();resetPose(0,0,currentYawDeg);targetYawDeg=competitionHeadingDeg;
         transitionTo(DI_SANG_TRAI_A);
         Serial.println("ACK,AUTO_START_TOF_ALIGNED");
       }
@@ -1974,10 +1994,13 @@ void updateCompetition(float dt) {
       if(updateTofAlignment(dt)){yAligned=true;transitionTo(CAN_A);}
       break;
     case CAN_A:
-      setRobotVelocity(0,0,headingControl(dt,0.12f));
+      setRobotVelocity(0,0,headingControlFine(dt));
       if(autoPickVerified())transitionTo(DOI_GAP_A);
       break;
-    case DOI_GAP_A: if(espDone){espDone=false;transitionTo(DI_SANG_TRAI_B);}break;
+    case DOI_GAP_A:
+      if(!espDone&&millis()-stateStartedMs>5500&&millis()-espCommandSentMs>5000)
+        sendEsp("POINT_A");
+      if(espDone){espDone=false;transitionTo(DI_SANG_TRAI_B);}break;
     case DI_SANG_TRAI_B:
       if(updateAutoPickTravel(dt,secondPickUsesRightStopGroup(),PICK_B_LINE_TARGET))
         transitionTo(BU_TAM_B);
@@ -1989,10 +2012,13 @@ void updateCompetition(float dt) {
       if(updateTofAlignment(dt)){yAligned=true;transitionTo(CAN_B);}
       break;
     case CAN_B:
-      setRobotVelocity(0,0,headingControl(dt,0.12f));
+      setRobotVelocity(0,0,headingControlFine(dt));
       if(autoPickVerified())transitionTo(DOI_GAP_B);
       break;
-    case DOI_GAP_B: if(espDone){espDone=false;transitionTo(DI_SANG_C);}break;
+    case DOI_GAP_B:
+      if(!espDone&&millis()-stateStartedMs>5500&&millis()-espCommandSentMs>5000)
+        sendEsp("POINT_B");
+      if(espDone){espDone=false;transitionTo(DI_SANG_C);}break;
     case DI_SANG_C:
       // During lateral travel the eight sensors cross each transverse line in
       // sequence, so only 1-3 eyes can be HIGH at once. centerLine.valid uses
@@ -2001,16 +2027,20 @@ void updateCompetition(float dt) {
       bridgeAutoCounter.update(centerLine.valid);
       if(bridgeAutoCounter.count<BRIDGE_LINE_TARGET){
         bridgeEntryCenterStableSince=0;
-        setRobotVelocity(0,selectedFieldLateralSign()*MOVE_LEFT_SPEED_MM_S,
+        setRobotVelocity(0,selectedFieldLateralSign()*BRIDGE_LATERAL_SCAN_SPEED_MM_S,
                          headingControl(dt,MAX_LINE_ALIGN_WZ_RAD_S));
       }else if(centerLine.valid){
         // The third line first reaches an outside eye. Center it under the
         // array before driving forward, otherwise the robot immediately loses
         // the bridge line after changing direction.
-        const float centerVy=constrain(
+        float centerVy=constrain(
             CENTER_LINE_CONTROL_SIGN*BRIDGE_ENTRY_CENTER_KP*centerLine.position,
             -BRIDGE_ENTRY_CENTER_MAX_VY_MM_S,BRIDGE_ENTRY_CENTER_MAX_VY_MM_S);
-        setRobotVelocity(0,centerVy,headingControl(dt,MAX_LINE_ALIGN_WZ_RAD_S));
+        if(fabsf(centerLine.position)>BRIDGE_ENTRY_CENTER_TOLERANCE &&
+           fabsf(centerVy)<BRIDGE_ENTRY_CENTER_MIN_VY_MM_S){
+          centerVy=copysignf(BRIDGE_ENTRY_CENTER_MIN_VY_MM_S,centerVy);
+        }
+        setRobotVelocity(0,centerVy,headingControl(dt,MAX_BRIDGE_HEADING_WZ_RAD_S));
         if(fabsf(centerLine.position)<=BRIDGE_ENTRY_CENTER_TOLERANCE){
           if(!bridgeEntryCenterStableSince)bridgeEntryCenterStableSince=millis();
           if(millis()-bridgeEntryCenterStableSince>=BRIDGE_ENTRY_CENTER_CONFIRM_MS){
@@ -2029,7 +2059,7 @@ void updateCompetition(float dt) {
       float vx=BRIDGE_FORWARD_SPEED_MM_S;
       const float vy=updateLineFollowing(dt,vx);
       if(centerLine.valid)vx=max(vx,BRIDGE_MIN_FORWARD_SPEED_MM_S);
-      setRobotVelocity(vx,vy,headingControl(dt,MAX_LINE_ALIGN_WZ_RAD_S));
+      setRobotVelocity(vx,vy,headingControl(dt,MAX_BRIDGE_HEADING_WZ_RAD_S));
       if(centerLine.valid){
         if(!bridgeLineValidSince)bridgeLineValidSince=millis();
         if(millis()-bridgeLineValidSince>=BRIDGE_LINE_ACQUIRE_CONFIRM_MS)
@@ -2061,7 +2091,7 @@ void updateCompetition(float dt) {
       if(OPTICAL_FLOW_ENABLED&&!flow.valid&&millis()-stateStartedMs>FLOW_TIMEOUT_MS){setFault(FAULT_FLOW_TIMEOUT,"FLOW_ON_BRIDGE");break;}
       if(OPTICAL_FLOW_ENABLED&&flow.valid&&fabsf(lateralSlipMmS)>LATERAL_SLIP_THRESHOLD_MM_S)
         vx*=0.65f;
-      setRobotVelocity(vx,vy,headingControl(dt));
+      setRobotVelocity(vx,vy,headingControl(dt,MAX_BRIDGE_HEADING_WZ_RAD_S));
       if(bridgeCrossCount>=BRIDGE_STOP_CROSS_TARGET){
         stopRobot();transitionTo(CAN_GIUA_LINE_C);
       }
@@ -2308,7 +2338,7 @@ void loop() {
     else if(faultFlags!=FAULT_NONE)Serial.println("ERR,RESET_REQUIRED");
     else if(competitionConfigurationValid()){
       testMode=TEST_NONE;armed=true;resetAllControllers();resetPose();
-      targetYawDeg=currentYawDeg;transitionTo(CAN_START);
+      competitionHeadingDeg=currentYawDeg;targetYawDeg=competitionHeadingDeg;transitionTo(CAN_START);
     }else setFault(FAULT_CONFIG,"START_CONFIG_LOCKED");
   }
   previousStart=startNow;
@@ -2329,8 +2359,3 @@ void loop() {
   }
   printTelemetry();
 }
-
-
-
-
-
