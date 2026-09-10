@@ -57,15 +57,67 @@ constexpr int PWM_MAX = 255;
 constexpr float MAX_WHEEL_SPEED_MM_S = 1300.0f;
 constexpr float WHEEL_SPEED_FILTER_ALPHA = 0.35f;
 constexpr uint32_t CONTROL_PERIOD_US = 10000; // 100 Hz
+// Synchronized wheel-target ramp. It limits the initial torque step without
+// changing the Mecanum wheel-speed ratios. Safety stops still bypass this ramp.
+constexpr float WHEEL_TARGET_ACCEL_MM_S2 = 1400.0f;
+constexpr float WHEEL_TARGET_DECEL_MM_S2 = 2400.0f;
 
-// kp, ki, kd, feed-forward PWM/(mm/s), dead-zone PWM.
-// Measured with the robot lifted, verified at 30 and 100 RPM on 2026-08-30.
-constexpr float WHEEL_KP[4] = {0.15f, 0.15f, 0.15f, 0.15f};
-constexpr float WHEEL_KI[4] = {0.05f, 0.05f, 0.05f, 0.05f};
-constexpr float WHEEL_KD[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-constexpr float WHEEL_KFF[4] = {0.038f, 0.034f, 0.036f, 0.035f};
-constexpr int WHEEL_DEADZONE_PWM[4] = {32, 27, 27, 25};
+// All controller gains live in this file. Telemetry tuning changes RAM only;
+// reset/reboot restores these compiled values. EEPROM is not used for PID.
+// Direct USB tuning with all four wheels lifted, both directions, 40/80/120 RPM
+// on 2026-09-05. Recheck under load before competition use.
+// Array order everywhere in firmware: FL, FR, BL/RL, BR/RR.
+constexpr float WHEEL_KP[4] = {
+    0.15f, // FL - front left
+    0.14f, // FR - front right
+    0.14f, // BL/RL - back left
+    0.15f  // BR/RR - back right
+};
+constexpr float WHEEL_KI[4] = {
+    0.08f, // FL
+    0.08f, // FR
+    0.12f, // BL/RL
+    0.10f  // BR/RR
+};
+constexpr float WHEEL_KD[4] = {
+    0.0f, // FL: derivative disabled to avoid encoder-quantization kicks
+    0.0f, // FR
+    0.0f, // BL/RL
+    0.0f  // BR/RR
+};
+constexpr float WHEEL_KFF[4] = {0.035f, 0.045f, 0.034f, 0.034f}; // FL, FR, BL, BR
+constexpr int WHEEL_DEADZONE_PWM[4] = {36, 34, 34, 34}; // FL, FR, BL, BR
 constexpr float WHEEL_INTEGRAL_LIMIT = 250.0f;
+
+// Position, stop-line and distance controllers.
+constexpr float POSITION_X_KP = 1.40f;
+constexpr float POSITION_X_KI = 0.05f;
+constexpr float POSITION_X_KD = 0.01f;
+constexpr float POSITION_X_INTEGRAL_LIMIT = 400.0f;
+constexpr float POSITION_Y_KP = 1.40f;
+constexpr float POSITION_Y_KI = 0.05f;
+constexpr float POSITION_Y_KD = 0.01f;
+constexpr float POSITION_Y_INTEGRAL_LIMIT = 400.0f;
+constexpr float STOP_FORWARD_KP = 0.20f;
+constexpr float STOP_FORWARD_KI = 0.01f;
+constexpr float STOP_FORWARD_KD = 0.002f;
+constexpr float STOP_FORWARD_INTEGRAL_LIMIT = 600.0f;
+constexpr float STOP_YAW_KP = 0.0018f;
+constexpr float STOP_YAW_KI = 0.0001f;
+constexpr float STOP_YAW_KD = 0.00002f;
+constexpr float STOP_YAW_INTEGRAL_LIMIT = 500.0f;
+constexpr float TOF_DISTANCE_KP = 0.80f;
+constexpr float TOF_DISTANCE_KI = 0.0f;
+constexpr float TOF_DISTANCE_KD = 0.0f;
+constexpr float TOF_DISTANCE_INTEGRAL_LIMIT = 300.0f;
+constexpr float RIGHT_LINE_KP = 0.08f;
+constexpr float RIGHT_LINE_KI = 0.0f;
+constexpr float RIGHT_LINE_KD = 0.0f;
+constexpr float RIGHT_LINE_INTEGRAL_LIMIT = 1000.0f;
+constexpr float LEFT_LINE_KP = 0.08f;
+constexpr float LEFT_LINE_KI = 0.0f;
+constexpr float LEFT_LINE_KD = 0.0f;
+constexpr float LEFT_LINE_INTEGRAL_LIMIT = 1000.0f;
 
 // ---------------- BNO085 + I2C ----------------
 // Teensy 4.1 Wire1 defaults: SDA pin 17, SCL pin 16. TODO: confirm wiring.
@@ -80,7 +132,7 @@ constexpr uint32_t BNO_REPORT_INTERVAL_US = 10000;
 constexpr uint32_t BNO_TIMEOUT_MS = 250;
 constexpr uint32_t BNO_RETRY_INTERVAL_MS = 1000;
 // Ground step-response tuned on 2026-08-30 in both yaw directions.
-constexpr float HEADING_KP = 0.10f;
+constexpr float HEADING_KP = 0.101f;
 constexpr float HEADING_KI = 0.0f;
 constexpr float HEADING_KD = 0.004f;
 constexpr float HEADING_INTEGRAL_LIMIT = 30.0f;
@@ -96,6 +148,22 @@ constexpr float FINE_HEADING_KD = 0.0030f;
 constexpr float FINE_HEADING_DEADBAND_DEG = 0.25f;
 constexpr float FINE_HEADING_MIN_WZ_RAD_S = 0.180f;
 constexpr float FINE_HEADING_MAX_WZ_RAD_S = 0.35f;
+// Stationary/ToF alignment at pick points A and B. Keep these values gentler
+// than the moving heading controller so motor dead-zone compensation cannot
+// excite a left/right yaw oscillation around the target.
+constexpr float STATION_HEADING_DEADBAND_DEG = 0.45f;
+constexpr float STATION_HEADING_MIN_WZ_RAD_S = 0.05f;
+constexpr float STATION_HEADING_MAX_WZ_RAD_S = 0.16f;
+constexpr float STATION_HEADING_SLEW_RAD_S2 = 0.55f;
+constexpr float STATION_HEADING_SETTLED_RATE_DEG_S = 2.0f;
+// Dedicated, gentler heading hold for lateral AUTO travel. A slew limit avoids
+// the abrupt +/-Wz step that previously rotated the chassis across pick lines.
+constexpr float LATERAL_HEADING_DEADBAND_DEG = 0.45f;
+constexpr float LATERAL_HEADING_MIN_WZ_RAD_S = 0.06f;
+constexpr float LATERAL_HEADING_MAX_WZ_RAD_S = 0.20f;
+constexpr float LATERAL_HEADING_SLEW_RAD_S2 = 0.80f;
+constexpr float LATERAL_LINE_COUNT_MAX_YAW_ERROR_DEG = 2.0f;
+constexpr float LATERAL_HEADING_RECOVERY_SPEED_FACTOR = 0.45f;
 
 // ---------------- Two MCP3008 devices ----------------
 constexpr uint8_t MCP_CENTER_CS = 26; // CH0..7: eight center sensors
@@ -114,6 +182,26 @@ constexpr uint16_t CENTER_SENSOR_MAX[8] = {1023,1023,1023,1023,969,866,1023,1023
 // Logical order after the crossed-cable channel map: left CH3..5, right CH0..2.
 constexpr uint16_t STOP_SENSOR_MIN[6] = {76,76,76,80,83,81};
 constexpr uint16_t STOP_SENSOR_MAX[6] = {1023,1023,1023,1023,1023,1023};
+// MCP STOP CS8 remaining inputs: physical CH6 and CH7 (sensor numbers 7/8).
+// Replace these defaults after both sensors have seen white floor and black line.
+constexpr uint16_t LATERAL_HOLD_SENSOR_MIN[2] = {0, 0};
+constexpr uint16_t LATERAL_HOLD_SENSOR_MAX[2] = {1023, 1023};
+// H1 is mounted at the tail (CH6), H2 at the front (CH7). Black line is HIGH.
+constexpr uint8_t LATERAL_HOLD_TAIL_CHANNEL = 6;
+constexpr uint8_t LATERAL_HOLD_FRONT_CHANNEL = 7;
+constexpr uint16_t LATERAL_HOLD_LINE_THRESHOLD = 500;
+// +1: tail leaves line -> +Vx (forward), front leaves line -> -Vx (backward).
+// Change to -1 only if the first low-speed floor test corrects the wrong way.
+constexpr int8_t LATERAL_HOLD_CONTROL_SIGN = 1;
+constexpr float LATERAL_HOLD_CORRECTION_SPEED_MM_S = 65.0f;
+constexpr float LATERAL_HOLD_SEARCH_SPEED_MM_S = 35.0f;
+constexpr float LATERAL_HOLD_SLEW_MM_S2 = 220.0f;
+constexpr uint32_t LATERAL_HOLD_LOST_TIMEOUT_MS = 450;
+constexpr uint32_t LATERAL_HOLD_ACQUIRE_TIMEOUT_MS = 1200;
+// After the 170 mm launch, travel sideways this distance before enabling H1/H2
+// and the point-A line counter. This avoids treating the start marking as the
+// longitudinal guide line.
+constexpr float FIRST_LATERAL_BLIND_DISTANCE_MM = 400.0f;
 constexpr bool CENTER_LINE_CALIBRATION_VERIFIED = true;
 constexpr bool STOP_LINE_CALIBRATION_VERIFIED = true;
 // Confirmed: physical left is CH3..5, physical right is CH0..2; within each
@@ -148,6 +236,8 @@ constexpr uint32_t STOP_CROSS_RELEASE_MS = 100;
 // Existing convention is preserved: +vx forward, +vy right, +wz clockwise.
 // Counts belong to mission points A/B, not to a physical side. The active
 // three-eye group is selected from the field direction at run time.
+// The start marking is ignored while the robot first moves forward by encoder.
+// Counting begins only when lateral travel starts; point A is line number 2.
 constexpr uint8_t PICK_A_LINE_TARGET = 2;
 constexpr uint8_t PICK_B_LINE_TARGET = 1;
 // After POINT_B, the center 8-eye array ignores the line currently under the
@@ -162,16 +252,126 @@ constexpr uint32_t PICK_LINE_CONFIRM_MS = 8;
 constexpr uint32_t PICK_LINE_CLEAR_MS = 60;
 constexpr uint32_t X_ALIGN_STABLE_TIME_MS = 180;
 constexpr uint32_t LINE_SEARCH_TIMEOUT_MS = 5000;
-constexpr uint32_t HEADING_STABLE_TIME_MS = 80;
+constexpr uint32_t HEADING_STABLE_TIME_MS = 350;
 constexpr float HEADING_TOLERANCE_DEG = 0.60f;
 constexpr float MOVE_LEFT_SPEED_MM_S = 400.0f;
+// Do not use ToF/encoder X correction while crossing lateral pick lines. ToF
+// changes with wall geometry and previously injected 60-75 mm/s longitudinal
+// motion. Absolute ToF alignment remains active after the robot stops at A/B.
+constexpr bool LATERAL_LONGITUDINAL_HOLD_ENABLED = false;
+// Encoder-odometry correction that prevents forward/backward drift while strafing.
+constexpr float LATERAL_X_HOLD_KP = 1.20f;
+constexpr float LATERAL_X_HOLD_DEADBAND_MM = 6.0f;
+constexpr float LATERAL_X_HOLD_MAX_SPEED_MM_S = 140.0f;
+// Absolute wall-distance hold used while strafing; encoder Mecanum odometry
+// alone cannot distinguish real longitudinal drift from wheel slip.
+constexpr float LATERAL_TOF_HOLD_KP = 0.90f;
+constexpr float LATERAL_TOF_HOLD_DEADBAND_MM = 8.0f;
+constexpr float LATERAL_TOF_HOLD_MAX_SPEED_MM_S = 130.0f;
 // Lateral scan from point B to the third center-array line.
 constexpr float BRIDGE_LATERAL_SCAN_SPEED_MM_S = 500.0f;
 constexpr float X_ALIGN_MAX_SPEED_MM_S = 80.0f;
-constexpr float X_ALIGN_SEARCH_SPEED_MM_S = 35.0f;
+// Loaded-wheel minimum at A/B: commands below this can remain inside static
+// friction and leave the state machine waiting even though line error exists.
+constexpr float X_ALIGN_MIN_SPEED_MM_S = 55.0f;
+constexpr float X_ALIGN_SEARCH_SPEED_MM_S = 55.0f;
+// Point B is accepted only when the middle (0) and inside (+1000) eyes are
+// simultaneously on black. Their geometric midpoint is +500.
+constexpr float POINT_B_PAIR_TARGET_POSITION = 500.0f;
+// If the 200 mm A-to-B encoder move passes the line completely, search back
+// first and then sweep around the arrival point instead of drifting forever.
+constexpr float POINT_B_PAIR_SEARCH_RADIUS_MM = 120.0f;
+constexpr uint32_t POINT_B_PAIR_SEARCH_TIMEOUT_MS = 10000;
+// Reject short threshold dropouts while heading settles at B.
+constexpr uint32_t POINT_B_PAIR_LOST_GRACE_MS = 250;
+// Preserve the precise 0.6 degree condition first. If BNO rate noise prevents
+// 350 ms of perfect settling, accept this still-tight bounded result instead.
+constexpr uint32_t POINT_B_HEADING_MAX_SETTLE_MS = 1800;
+constexpr float POINT_B_HEADING_FALLBACK_TOLERANCE_DEG = 1.0f;
+constexpr float POINT_B_HEADING_FALLBACK_RATE_DEG_S = 4.0f;
 constexpr float TOF_ALIGN_MAX_SPEED_MM_S = 100.0f;
-constexpr float BRIDGE_FORWARD_SPEED_MM_S = 1150.0f;
-constexpr float BRIDGE_MIN_FORWARD_SPEED_MM_S = 950.0f; // Minimum while center line remains valid on ramp
+constexpr float BRIDGE_FORWARD_SPEED_MM_S = 1300.0f;
+constexpr float BRIDGE_APPROACH_SPEED_MM_S = 1000.0f;
+constexpr float BRIDGE_CREST_SPEED_MM_S = 350.0f;
+constexpr float BRIDGE_DESCENT_SPEED_MM_S = 300.0f;
+// Relative roll/pitch thresholds. The level reference is captured immediately
+// after the eight-eye array is centred, before forward bridge travel begins.
+constexpr float BRIDGE_INCLINE_ENTER_DEG = 5.0f;
+constexpr float BRIDGE_CREST_LEVEL_DEG = 4.0f;
+constexpr uint32_t BRIDGE_INCLINE_CONFIRM_MS = 150;
+constexpr uint32_t BRIDGE_CREST_CONFIRM_MS = 120;
+constexpr uint32_t BRIDGE_MIN_ASCENT_BEFORE_CREST_MS = 300;
+// After the crest is level, a renewed tilt confirms that the robot is actually
+// descending. Transverse-line detection is disabled until this state.
+constexpr float BRIDGE_DESCENT_ENTER_DEG = 4.5f;
+constexpr uint32_t BRIDGE_DESCENT_CONFIRM_MS = 100;
+// Do not arm transverse-line detection at the vibrating foot of the bridge.
+// The robot must return close to level continuously for this settling time.
+constexpr float BRIDGE_DESCENT_EXIT_LEVEL_DEG = 2.0f;
+constexpr uint32_t BRIDGE_DESCENT_EXIT_LEVEL_CONFIRM_MS = 500;
+// The longitudinal guide normally covers only 1-2 center eyes. A transverse
+// marker covers most of the array, so detect it directly without stacking the
+// centerLine.cross debounce with another long confirmation delay.
+constexpr uint16_t BRIDGE_CENTER_MARKER_ACTIVE_NORMALIZED = 400;
+constexpr uint8_t BRIDGE_CENTER_MARKER_MIN_ACTIVE_SENSORS = 5;
+constexpr uint32_t BRIDGE_END_MARKER_CONFIRM_MS = 30;
+constexpr uint32_t BRIDGE_SIDE_MARKER_CONFIRM_MS = 80;
+// Once an end marker is latched, continue following the longitudinal guide by
+// encoder before stopping. The center array is farther forward than the sides.
+constexpr float BRIDGE_CENTER_MARKER_ADVANCE_MM = 300.0f;
+constexpr float BRIDGE_SIDE_MARKER_ADVANCE_MM = 300.0f;
+constexpr float BRIDGE_POST_MARKER_SPEED_MM_S = 200.0f;
+// After the end-marker advance, move right 190 mm by encoder, then reuse
+// point B's middle (0) + inside (+1000) eye PID to pull back onto the line.
+// The point-B eye pair is the primary stop/advance condition. ESP32 E18 is
+// auxiliary telemetry only and must never block the following 70 mm move.
+// During that move, one remaining point-B eye steers laterally; losing both
+// pauses forward motion until the middle+inside pair is stable again.
+constexpr float POST_BRIDGE_E18_RIGHT_DISTANCE_MM = 190.0f;
+constexpr float POST_BRIDGE_E18_RIGHT_SPEED_MM_S = 200.0f;
+constexpr float POST_BRIDGE_E18_ALIGN_MIN_SPEED_MM_S = 90.0f;
+constexpr float POST_BRIDGE_E18_ALIGN_MAX_SPEED_MM_S = 140.0f;
+constexpr uint32_t POST_BRIDGE_E18_LINE_CONFIRM_MS = 40;
+constexpr uint32_t POST_BRIDGE_E18_POLL_MS = 100;
+constexpr float POST_BRIDGE_E18_FORWARD_DISTANCE_MM = 70.0f;
+constexpr float POST_BRIDGE_E18_FORWARD_SPEED_MM_S = 200.0f;
+constexpr float POST_BRIDGE_E18_FORWARD_MIN_SPEED_MM_S = 110.0f;
+constexpr uint32_t POST_BRIDGE_FORWARD_PAIR_LOST_CONFIRM_MS = 60;
+constexpr uint32_t POST_BRIDGE_E18_SEARCH_TIMEOUT_MS = 13000;
+// Route from completed 2A placement to the 2B drop line. Physical right is
+// negative body Y on the verified drivetrain; backward is negative body X.
+constexpr float POST_THA2A_RIGHT_DISTANCE_MM = 400.0f;
+constexpr float POST_THA2A_BACKWARD_DISTANCE_MM = 200.0f;
+constexpr float POST_THA2A_DIAGONAL_SPEED_MM_S = 300.0f;
+// Watch the right middle/inside eyes during the coarse diagonal move. The
+// previous pickup line must first clear, then touching either eye on the next
+// vertical line immediately hands control to the slow pair aligner.
+constexpr float THA2B_COARSE_LINE_ARM_DISTANCE_MM = 80.0f;
+constexpr uint16_t THA2B_COARSE_LINE_THRESHOLD = 450;
+constexpr uint32_t THA2B_COARSE_CLEAR_CONFIRM_MS = 40;
+constexpr uint32_t THA2B_COARSE_HIT_CONFIRM_MS = 10;
+constexpr float THA2B_PAIR_SEARCH_SPEED_MM_S = 60.0f;
+constexpr float THA2B_PAIR_ALIGN_MIN_SPEED_MM_S = 25.0f;
+constexpr float THA2B_PAIR_ALIGN_MAX_SPEED_MM_S = 90.0f;
+constexpr uint32_t THA2B_PAIR_CONFIRM_MS = 80;
+constexpr float THA2B_LINE_REVERSE_SPEED_MM_S = 260.0f;
+constexpr float THA2B_LINE_CLEAR_SPEED_MM_S = 90.0f;
+constexpr uint8_t THA2B_LEFT_MARKER_MIN_ACTIVE = 2;
+constexpr uint32_t THA2B_HORIZONTAL_CONFIRM_MS = 50;
+constexpr uint32_t THA2B_HORIZONTAL_CLEAR_CONFIRM_MS = 20;
+constexpr uint32_t THA2B_DIAGONAL_TIMEOUT_MS = 8000;
+constexpr uint32_t THA2B_LINE_SEARCH_TIMEOUT_MS = 13000;
+constexpr uint32_t THA2B_REVERSE_TIMEOUT_MS = 15000;
+// Final route after ESP32 confirms THA_2B. Physical right is -body Y and
+// reverse is -body X on the verified drivetrain.
+constexpr float POST_THA2B_EXIT_RIGHT_DISTANCE_MM = 2000.0f;
+constexpr float POST_THA2B_EXIT_REVERSE_DISTANCE_MM = 3000.0f;
+constexpr float POST_THA2B_EXIT_DIAGONAL_SPEED_MM_S = 1200.0f;
+constexpr uint32_t POST_THA2B_EXIT_DIAGONAL_TIMEOUT_MS = 18000;
+
+constexpr float BNO_TILT_FILTER_ALPHA = 0.35f;
+constexpr float BRIDGE_LINE_SEARCH_RADIUS_MM = 180.0f;
+constexpr float BRIDGE_LINE_SEARCH_SPEED_MM_S = 60.0f;
 constexpr float BRIDGE_ENTRY_CENTER_KP = 0.08f;
 // Minimum command overcomes drivetrain stiction while centering on line 3.
 constexpr float BRIDGE_ENTRY_CENTER_MIN_VY_MM_S = 90.0f;
@@ -182,7 +382,7 @@ constexpr uint32_t BRIDGE_ENTRY_CENTER_CONFIRM_MS = 80;
 // bridge line and detected this many complete transverse markers.
 constexpr uint8_t BRIDGE_STOP_CROSS_TARGET = 3;
 constexpr uint32_t BRIDGE_LINE_ACQUIRE_CONFIRM_MS = 180;
-constexpr uint32_t BRIDGE_LINE_ACQUIRE_TIMEOUT_MS = 3500;
+constexpr uint32_t BRIDGE_LINE_ACQUIRE_TIMEOUT_MS = 10000;
 constexpr uint32_t BRIDGE_FOLLOW_TIMEOUT_MS = 20000;
 // TODO: set to +1 or -1 only after low-speed tests. Zero locks AUTO START.
 constexpr int8_t TOF_CONTROL_SIGN = 1;
@@ -216,9 +416,12 @@ constexpr float LATERAL_SLIP_THRESHOLD_MM_S = 180.0f;
 // ---------------- VL53L3CX (DFRobot SEN0378) ----------------
 // Shares Teensy 4.1 Wire1 (SDA17/SCL16) with BNO085.
 // BNO085 uses 0x4A and VL53L3CX uses its default address 0x29.
-constexpr bool TOF_ENABLED = true;
+// This competition route no longer uses ToF. Keep the driver code available
+// for the standalone diagnostic build, but do not initialize or poll it here.
+constexpr bool TOF_ENABLED = false;
 constexpr uint8_t TOF_I2C_ADDRESS = 0x29;
-constexpr uint16_t TOF_TARGET_MM = 220;
+// Measured alignment point: H1 and H2 are centred on the black line at ~160 mm.
+constexpr uint16_t TOF_TARGET_MM = 160;
 constexpr uint16_t TOF_MIN_VALID_MM = 35;
 constexpr uint16_t TOF_MAX_VALID_MM = 800;
 // Reject implausible single-step jumps caused by VL53L3CX ghost targets.
@@ -230,8 +433,38 @@ constexpr uint32_t TOF_ALIGNMENT_RECOVERY_MS = 3000;
 // At the starting mark the sensor is only about 20 mm from the wall, below
 // the reliable VL53L3CX range. Creep forward by encoder until ToF can take over.
 // Initial launch is encoder-only; ToF is intentionally ignored here.
-constexpr float START_ENCODER_DISTANCE_MM = 260.0f;
-constexpr float START_ENCODER_SPEED_MM_S = 250.0f;
+constexpr float START_ENCODER_DISTANCE_MM = 170.0f;
+constexpr float START_ENCODER_SPEED_MM_S = 280.0f;
+constexpr float START_LATERAL_DISTANCE_MM = 1000.0f;
+constexpr float START_LATERAL_SPEED_MM_S = 400.0f;
+constexpr float START_HOLD_LINE_SEARCH_SPEED_MM_S = 280.0f;
+constexpr uint32_t START_HOLD_LINE_CONFIRM_MS = 100;
+constexpr uint32_t START_HOLD_LINE_SEARCH_TIMEOUT_MS = 8000;
+// After H1/H2 acquire the longitudinal guide, creep sideways until the
+// logical right array's middle and inside eyes both see the pickup line.
+constexpr float POINT_A_RIGHT_ALIGN_SPEED_MM_S = 50.0f;
+constexpr uint16_t POINT_A_RIGHT_SENSOR_THRESHOLD = 500;
+constexpr uint32_t POINT_A_RIGHT_CONFIRM_MS = 120;
+constexpr uint32_t POINT_A_RIGHT_PAIR_WINDOW_MS = 1200;
+constexpr uint32_t POINT_A_RIGHT_SEARCH_TIMEOUT_MS = 15000;
+// Measured lateral distance from the start of the sideways leg to point A.
+// Encoder distance defines only the search window; the line sensors still
+// decide the final stop/alignment because Mecanum wheels can slip.
+constexpr float POINT_A_EXPECTED_LATERAL_MM = 1075.0f;
+constexpr float POINT_A_SEARCH_HALF_RANGE_MM = 200.0f;
+constexpr float POINT_A_SEARCH_SPEED_MM_S = 70.0f;
+// Point A becomes the new odometry origin. Move this measured lateral
+// distance toward B, then let the B side-array perform the final alignment.
+constexpr float POINT_A_TO_B_DISTANCE_MM = 200.0f;
+constexpr float POINT_A_TO_B_SPEED_MM_S = 300.0f;
+// Once point A''s middle/inside side eyes are locked on the line, keep that
+// lateral position and search forward/back for H1/H2 within this safe radius.
+constexpr float POINT_A_H_SEARCH_RADIUS_MM = 100.0f;
+constexpr float POINT_A_H_SEARCH_SPEED_MM_S = 35.0f;
+constexpr uint32_t POINT_A_H_SEARCH_TIMEOUT_MS = 15000;
+// After POINT_B, move robot-left by encoder before acquiring the center line.
+constexpr float POST_B_LEFT_DISTANCE_MM = 1300.0f;
+constexpr float POST_B_LEFT_SPEED_MM_S = 800.0f;
 constexpr float TOF_START_ESCAPE_DISTANCE_MM = 250.0f;
 constexpr float TOF_START_ESCAPE_SPEED_MM_S = 300.0f;
 constexpr uint8_t TOF_MEDIAN_SAMPLES = 5;
@@ -255,9 +488,18 @@ constexpr bool ESP32_UART_ENABLED = true;
 constexpr uint8_t ESP32_TX_PIN = 24;
 constexpr uint8_t ESP32_RX_PIN = 25;
 constexpr uint32_t ESP32_BAUD = 57600;
-// The mechanism simulator intentionally answers after 10 s. Keep enough margin
-// for scheduling and UART transmission before declaring an ESP32 timeout.
+// AUTO always uses the real ESP32 mechanism link.
 constexpr uint32_t ESP32_REPLY_TIMEOUT_MS = 15000;
+constexpr uint32_t ESP32_HOME_READY_TIMEOUT_MS = 30000;
+// Post-bridge handshake: Teensy notifies ESP32 after the 70 mm line-held move.
+// ESP32 must reply with the exact token DONE_THA2A. Retries are idempotent.
+constexpr uint32_t DONE_THA2A_RETRY_INTERVAL_MS = 1000;
+constexpr uint8_t DONE_THA2A_MAX_ATTEMPTS = 6;
+constexpr uint32_t DONE_THA2A_TOTAL_TIMEOUT_MS = 7000;
+// Final 2B action sends CHO_THA2B and waits for exact DONE_THA2B.
+constexpr uint32_t DONE_THA2B_RETRY_INTERVAL_MS = 1000;
+constexpr uint8_t DONE_THA2B_MAX_ATTEMPTS = 6;
+constexpr uint32_t DONE_THA2B_TOTAL_TIMEOUT_MS = 7000;
 constexpr uint32_t STATE_DEFAULT_TIMEOUT_MS = 12000;
 // 5 Hz leaves margin on the half-duplex radio while four motors create EMI.
 // The 100 Hz control loop and 500 ms motion watchdog are unchanged.
@@ -269,10 +511,31 @@ constexpr uint32_t POSITION_LINK_WATCHDOG_MS = 600;
 // the translational wheel targets while the robot is converging on X/Y.
 constexpr float MAX_POSITION_HEADING_WZ_RAD_S = 0.35f;
 
-// Pins 31/32 are unused. START/STOP remain available through RBT/1 telemetry.
-constexpr bool PHYSICAL_START_STOP_ENABLED = false;
-constexpr uint8_t START_PIN = 32;
-constexpr uint8_t STOP_PIN = 31;
+// Active-low physical controls. Each input uses Teensy INPUT_PULLUP, so the
+// released level is HIGH and a pressed switch connects the pin to GND.
+constexpr bool PHYSICAL_CONTROL_BUTTONS_ENABLED = true;
+constexpr uint8_t PHYSICAL_START_BUTTON_PIN = 34;
+constexpr uint8_t PHYSICAL_FIELD_BUTTON_PIN = 35;
+constexpr uint32_t PHYSICAL_BUTTON_DEBOUNCE_MS = 35;
+constexpr uint32_t PHYSICAL_FIELD_DOUBLE_CLICK_MS = 450;
+
+// AO3400A is a low-side switch: HIGH on IN_BUZZER enables the buzzer.
+constexpr uint8_t BUZZER_PIN = 40;
+constexpr bool BUZZER_ACTIVE_HIGH = true;
+constexpr uint16_t BUZZER_BEEP_ON_MS = 110;
+constexpr uint16_t BUZZER_BEEP_OFF_MS = 100;
+constexpr uint16_t BUZZER_PATTERN_GAP_MS = 180;
+// Short double tone used only for command replies from the mechanism ESP32.
+constexpr uint16_t BUZZER_UART_FAST_ON_MS = 55;
+constexpr uint16_t BUZZER_UART_FAST_OFF_MS = 45;
+constexpr uint16_t BUZZER_UART_FAST_GAP_MS = 100;
+constexpr uint16_t BUZZER_ALARM_TOGGLE_MS = 120;
+constexpr uint32_t BUZZER_ALIGNMENT_ALARM_MS = 2000;
+
+static_assert(PHYSICAL_START_BUTTON_PIN != PHYSICAL_FIELD_BUTTON_PIN &&
+              PHYSICAL_START_BUTTON_PIN != BUZZER_PIN &&
+              PHYSICAL_FIELD_BUTTON_PIN != BUZZER_PIN,
+              "Physical control pins must be unique");
 
 // ---------------- Mission constants copied from V10 ----------------
 constexpr float SENSOR_TO_CENTER_MM = 20.0f;

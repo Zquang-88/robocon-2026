@@ -1,19 +1,21 @@
 # ESP32 mechanism simulator
 
 Firmware này giả lập cơ cấu chưa hoàn thiện để Teensy 4.1 có thể tiếp tục chạy
-state machine tự động. ESP32 nhận một lệnh cơ cấu hợp lệ, chờ không chặn 10 giây,
+state machine tự động. ESP32 nhận một lệnh cơ cấu hợp lệ, chờ không chặn 4 giây,
 sau đó gửi đúng một dòng `DONE` về robot.
 
 ## Giao thức khớp với firmware chính
 
-| Teensy gửi | ESP32 trả sau 10 giây |
+| Teensy gửi | ESP32 trả sau 4 giây |
 |---|---|
 | `POINT_A` | `DONE` |
 | `POINT_B` | `DONE` |
 | `THA_2B` | `DONE` |
 | `THA_2A` | `DONE` |
+| `DONE_THA_2A` | `DONE_THA2A` |
+| `DONE_THA_2B` | `DONE_THA2B` |
 
-- UART: `115200`, `8N1`.
+- UART giữa hai board: `57600`, `8N1`.
 - Mỗi bản tin kết thúc bằng CR/LF; `println()` ở hai phía đáp ứng yêu cầu này.
 - Chuỗi `DONE` phải viết hoa vì Teensy so sánh chính xác, phân biệt hoa/thường.
 - Lệnh không thuộc bảng trên sẽ bị bỏ qua và chỉ được báo trên USB Serial của
@@ -24,7 +26,7 @@ sau đó gửi đúng một dòng `DONE` về robot.
 | ESP32 DevKit V1 | Teensy 4.1 |
 |---|---|
 | GPIO16 / RX2 | pin 24 / TX6 |
-| GPIO17 / TX2 | pin 25 / RX6 |
+| GPIO15 / TX2 | pin 25 / RX6 |
 | GND | GND |
 
 Hai board đều dùng logic 3.3 V. Phải nối chung GND và nối chéo TX-RX. Không nối
@@ -44,4 +46,4 @@ USB monitor chạy ở 115200 baud và hiển thị lệnh đã nhận, thời �
 phỏng và lúc gửi `DONE`. Kênh USB debug độc lập với UART2 nối sang Teensy.
 
 Firmware chính đã đặt `ESP32_REPLY_TIMEOUT_MS` thành 15 giây để đủ thời gian chờ
-10 giây và có thêm biên an toàn cho scheduler/UART.
+4 giây và có thêm biên an toàn cho scheduler/UART.

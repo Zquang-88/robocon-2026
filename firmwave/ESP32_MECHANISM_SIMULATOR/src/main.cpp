@@ -3,12 +3,14 @@
 
 namespace {
 
-// ESP32 DevKit V1 UART2 pins. Connect RX2 to Teensy TX6 (pin 24), TX2 to
-// Teensy RX6 (pin 25), and connect the grounds of both controllers.
+// Physical UART wiring confirmed on the robot:
+// ESP32 RX GPIO16 <- Teensy TX6 pin 24
+// ESP32 TX GPIO15 -> Teensy RX6 pin 25
+// Both controllers must share GND.
 constexpr int kRobotRxPin = 16;
-constexpr int kRobotTxPin = 17;
-constexpr uint32_t kRobotBaud = 115200;
-constexpr uint32_t kSimulatedActionMs = 10000;
+constexpr int kRobotTxPin = 15;
+constexpr uint32_t kRobotBaud = 57600;
+constexpr uint32_t kSimulatedActionMs = 4000;
 constexpr size_t kLineCapacity = 32;
 
 HardwareSerial robotSerial(2);
@@ -21,9 +23,17 @@ uint32_t actionStartedMs = 0;
 
 bool isSupportedCommand(const char *command) {
   return strcmp(command, "POINT_A") == 0 ||
+         strcmp(command, "ROBOT START") == 0 ||
          strcmp(command, "POINT_B") == 0 ||
          strcmp(command, "THA_2B") == 0 ||
-         strcmp(command, "THA_2A") == 0;
+         strcmp(command, "THA_2A") == 0 ||
+         strcmp(command, "DONE_THA_2A") == 0 ||
+         strcmp(command, "DONE_THA_2B") == 0 ||
+         strcmp(command, "CHO_THA2B") == 0;
+}
+
+const char *simulationAction(const char *command) {
+  return strncmp(command, "SIM,", 4) == 0 ? command + 4 : command;
 }
 
 char *trimAscii(char *text) {
@@ -40,21 +50,33 @@ char *trimAscii(char *text) {
 }
 
 void startSimulatedAction(const char *command) {
-  if (!isSupportedCommand(command)) {
+  if (strcmp(command, "STOP") == 0 || strcmp(command, "ESTOP") == 0) {
+    actionPending = false;
+    pendingCommand[0] = '\0';
+    robotSerial.println("ACK,STOPPED_SAFE");
+#ifdef LED_BUILTIN
+    digitalWrite(LED_BUILTIN, LOW);
+#endif
+    Serial.println("SIMULATION_STOPPED");
+    return;
+  }
+
+  const char *action = simulationAction(command);
+  if (!isSupportedCommand(action)) {
     Serial.print("IGNORED_UNKNOWN_COMMAND: ");
     Serial.println(command);
     return;
   }
 
   // The robot sends only one mechanism command at a time. If electrical noise
-  // creates a duplicate while waiting, do not restart the 10-second timer.
+  // creates a duplicate while waiting, do not restart the action timer.
   if (actionPending) {
     Serial.print("IGNORED_WHILE_BUSY: ");
     Serial.println(command);
     return;
   }
 
-  strncpy(pendingCommand, command, sizeof(pendingCommand) - 1);
+  strncpy(pendingCommand, action, sizeof(pendingCommand) - 1);
   pendingCommand[sizeof(pendingCommand) - 1] = '\0';
   actionStartedMs = millis();
   actionPending = true;
@@ -65,7 +87,7 @@ void startSimulatedAction(const char *command) {
 
   Serial.print("RECEIVED: ");
   Serial.print(pendingCommand);
-  Serial.println("; simulating mechanism for 10 seconds");
+  Serial.println("; simulating mechanism for 4 seconds");
 }
 
 void processCompleteLine() {
@@ -104,11 +126,23 @@ void finishSimulatedActionWhenDue() {
     return;
   }
 
-  // The main Teensy firmware performs an exact, case-sensitive comparison
-  // against "DONE" and expects a CR/LF-delimited line.
-  robotSerial.println("DONE");
+  const char *response = "DONE";
+  if (strcmp(pendingCommand, "ROBOT START") == 0)
+    response = "DONE,ROBOT_START";
+  else if (strcmp(pendingCommand, "POINT_A") == 0)
+    response = "DONE,PICK_A";
+  else if (strcmp(pendingCommand, "POINT_B") == 0)
+    response = "DONE,PICK_B";
+  else if (strcmp(pendingCommand, "DONE_THA_2A") == 0)
+    response = "DONE_THA2A";
+  else if (strcmp(pendingCommand, "DONE_THA_2B") == 0 ||
+           strcmp(pendingCommand, "CHO_THA2B") == 0)
+    response = "DONE_THA2B";
+  robotSerial.println(response);
 
-  Serial.print("SENT: DONE for ");
+  Serial.print("SENT: ");
+  Serial.print(response);
+  Serial.print(" for ");
   Serial.println(pendingCommand);
 
   actionPending = false;
@@ -132,13 +166,12 @@ void setup() {
 
   Serial.println();
   Serial.println("ESP32_MECHANISM_SIMULATOR_READY");
-  Serial.println("UART2 RX=GPIO16 TX=GPIO17 BAUD=115200");
-  Serial.println("Commands: POINT_A, POINT_B, THA_2B, THA_2A");
-  Serial.println("Each valid command receives DONE after 10 seconds");
+  Serial.println("UART2 RX=GPIO16 TX=GPIO15 BAUD=57600");
+  Serial.println("Commands: POINT_A, POINT_B, THA_2B, THA_2A, DONE_THA_2A, DONE_THA_2B, SIM,<command>, STOP");
+  Serial.println("Commands normally receive DONE after 4 seconds; DONE_THA_2A receives DONE_THA2A; DONE_THA_2B receives DONE_THA2B");
 }
 
 void loop() {
   readRobotCommands();
   finishSimulatedActionWhenDue();
 }
-

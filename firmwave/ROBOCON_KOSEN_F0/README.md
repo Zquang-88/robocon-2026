@@ -132,15 +132,27 @@ PID vị trí và BNO085 giữ yaw. Mất heartbeat giao diện quá 600 ms cũn
 Các alias `RUN`, `ESTOP`, `PID,...` và dòng `TEL,...` tương thích giao diện
 ASCII RBT/1 trong thư mục `pid-tuner`. Telemetry đầy đủ có tiền tố `DBG` ở 10 Hz.
 
+Trong lúc AUTO đang ARM, firmware không phát khối telemetry định kỳ. Chọn
+`AUTO_TELEM,ON_REQUEST` để chỉ đọc một lần bằng `AUTO_TELEM,SNAPSHOT`, hoặc
+`AUTO_TELEM,SILENT` để không trả snapshot. Snapshot theo yêu cầu được chia thành
+`AUTO_SNAPSHOT`, `AUTO_WHEELS`, `AUTO_SENSORS` và
+`AUTO_TELEM,SNAPSHOT_END`, mỗi vòng lặp chỉ phát một khung ngắn.
+
+Các sự kiện `STATE`, `FAULT`, `SAFETY,FAULT`, `SAFETY,ESTOP`,
+`SAFETY,STOP_INPUT` và `SAFETY,AUTO_COMPLETE` luôn được gửi trong cả hai chế độ;
+giao diện không thể tắt các bản tin an toàn này.
+
 Giao diện Web Serial gửi heartbeat mỗi 100 ms. Chế độ `TUNE,WHEEL` chỉ cho
 phép một bánh chạy; nếu mất heartbeat quá 600 ms, firmware đặt bốn target về 0,
-xóa PID và disarm. `SAVE_CONFIG` chỉ ghi PID/dead-zone/feedforward vào EEPROM
-khi robot đã dừng. Hãy mở `pid-tuner`, chọn cổng CP210x COM5 ở 57600 baud, chọn một
+xóa PID và disarm. PID, feedforward, deadzone và các giới hạn mặc định nằm trong
+`include/RobotConfig.h`; firmware không đọc hoặc ghi EEPROM. Tune từ giao diện chỉ
+thay đổi RAM cho tới khi reset. `SAVE_CONFIG` xác nhận RAM-only và `PROFILE_LOAD`
+nạp lại các giá trị đã biên dịch từ `RobotConfig.h`. Hãy mở `pid-tuner`, chọn cổng
+CP210x COM5 ở 57600 baud, chọn một
 bánh và bắt đầu ở RPM thấp khi robot đang được kê khỏi mặt đất.
 
-Telemetry dùng Serial5 RX21/TX20. UART ESP32 cũ bị tắt cho đến khi chốt được một
-UART và cặp chân riêng. Các chế độ đọc cảm biến, điều khiển tay và tune PID vẫn hoạt động; lệnh
-`START/RUN/AUTO` bị khóa cho đến khi ESP32 được chuyển sang một UART không trùng chân.
+Telemetry dùng Serial5 RX21/TX20. ESP32 dùng UART6 riêng: Teensy TX24 → ESP32
+RX16 và ESP32 TX15 → Teensy RX25, kèm GND chung.
 
 ## Trình tự test bắt buộc
 

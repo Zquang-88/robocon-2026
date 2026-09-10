@@ -61,9 +61,6 @@ def main() -> None:
                     if line.startswith(("ACK,", "ERR,", "FAULT,", "STATE,", "ESP_RX,", "AUTO,")):
                         print(line)
 
-                    if line == "STATE,BRIDGE_ENTRY_STOP" or line == "ACK,AUTO_BRIDGE_ENTRY_COMPLETE":
-                        result = "BRIDGE_ENTRY_STOP"
-                        return
                     if line == "STATE,FAULT_STOP" or line.startswith("FAULT,") or line.startswith("ERR,AUTO_TEST"):
                         result = line
                         return

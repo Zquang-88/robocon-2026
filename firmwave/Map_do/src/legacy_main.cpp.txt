@@ -1,0 +1,546 @@
+#include <Arduino.h>
+#include <AccelStepper.h>
+#include <MultiStepper.h>
+#include <math.h>
+
+// MOTOR A
+#define STEP_A 1
+#define DIR_A  2
+
+// MOTOR B
+#define STEP_B 45
+#define DIR_B  48
+
+// Thong so dang dung khi do thuc te
+// Motor A: vit me 12 mm/vong
+// Motor B: vit me 10 mm/vong
+const float STEP_PER_MM_A = 200.0 / 12.0;
+const float STEP_PER_MM_B = 200.0 / 10.0;
+
+int SPEED_STEP = 5000;
+const unsigned long THOI_GIAN_CHO = 3000;
+
+AccelStepper motorA(AccelStepper::DRIVER, STEP_A, DIR_A);
+AccelStepper motorB(AccelStepper::DRIVER, STEP_B, DIR_B);
+MultiStepper steppers;
+
+long target[2];
+
+bool dangChay = false;
+bool batDauBuoc = false;
+
+unsigned long mocThoiGian = 0;
+
+String boDemSerial = "";
+
+enum CHE_DO {
+  MANUAL,
+  AUTO
+};
+
+CHE_DO cheDo = MANUAL;
+
+enum TRANG_THAI {
+  AUTO_NANG_1,
+  CHO_1,
+
+  AUTO_NANG_2,
+  CHO_2,
+
+  AUTO_HA_3,
+  CHO_3,
+
+  AUTO_NANG_4,
+  CHO_4,
+
+  AUTO_HA_5,
+  CHO_5,
+
+  AUTO_NANG_6,
+  CHO_VE_HOME,
+
+  VE_HOME,
+  HOAN_THANH
+};
+
+TRANG_THAI trangThai = AUTO_NANG_1;
+
+void SET_MOC_BAN_DAU() {
+  motorA.setCurrentPosition(0);
+  motorB.setCurrentPosition(0);
+  Serial.println("SET MOC BAN DAU A = 0 | B = 0");
+}
+
+void IN_VI_TRI() {
+  float posA = (float)motorA.currentPosition() / STEP_PER_MM_A;
+  float posB = (float)motorB.currentPosition() / STEP_PER_MM_B;
+
+  Serial.print("A = ");
+  Serial.print(posA, 2);
+  Serial.print(" | B = ");
+  Serial.println(posB, 2);
+}
+
+void CHAY_DEN_VI_TRI(long posA, long posB) {
+  target[0] = posA;
+  target[1] = posB;
+
+  steppers.moveTo(target);
+  dangChay = true;
+}
+
+void MOVE_MM(float A, float B, int huong) {
+  long stepA = lroundf(A * STEP_PER_MM_A);
+  long stepB = lroundf(B * STEP_PER_MM_B);
+
+  long posA = motorA.currentPosition() + huong * stepA;
+  long posB = motorB.currentPosition() + huong * stepB;
+
+  CHAY_DEN_VI_TRI(posA, posB);
+}
+
+// Theo chieu thuc te ban da do
+void NANG(float A, float B) {
+  MOVE_MM(A, B, -1);
+}
+
+void HA(float A, float B) {
+  MOVE_MM(A, B, 1);
+}
+
+void VE_BAN_DAU() {
+  CHAY_DEN_VI_TRI(0, 0);
+}
+
+bool CAP_NHAT_DONG_CO() {
+  if (!dangChay) return false;
+
+  steppers.run();
+
+  if (motorA.distanceToGo() == 0 && motorB.distanceToGo() == 0) {
+    dangChay = false;
+    return true;
+  }
+
+  return false;
+}
+
+void DUNG_DONG_CO() {
+  target[0] = motorA.currentPosition();
+  target[1] = motorB.currentPosition();
+
+  steppers.moveTo(target);
+  dangChay = false;
+
+  Serial.println("DA DUNG DONG CO");
+}
+
+void CHUYEN_TRANG_THAI(TRANG_THAI moi) {
+  trangThai = moi;
+  mocThoiGian = millis();
+  batDauBuoc = false;
+}
+
+void PROMPT() {
+  Serial.print("> ");
+}
+
+bool DOC_SERIAL(String &lenh) {
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+
+    if (c == '\n') {
+      Serial.println();
+
+      lenh = boDemSerial;
+      boDemSerial = "";
+      lenh.trim();
+
+      if (lenh.length() > 0) return true;
+
+      PROMPT();
+    }
+    else if (c == '\r') {
+    }
+    else if (c == 8 || c == 127) {
+      if (boDemSerial.length() > 0) {
+        boDemSerial.remove(boDemSerial.length() - 1);
+        Serial.print("\b \b");
+      }
+    }
+    else {
+      boDemSerial += c;
+      Serial.write(c);
+    }
+  }
+
+  return false;
+}
+
+void XU_LY_SERIAL(String lenh) {
+  lenh.trim();
+  lenh.toUpperCase();
+
+  float A, B;
+  int tocDo;
+
+  if (lenh == "POS") {
+    IN_VI_TRI();
+  }
+
+  else if (lenh == "SET0") {
+    if (!dangChay) {
+      SET_MOC_BAN_DAU();
+    }
+    else {
+      Serial.println("DONG CO DANG CHAY");
+    }
+  }
+
+  else if (lenh == "HOME") {
+    if (!dangChay && cheDo == MANUAL) {
+      Serial.println("DANG VE HOME...");
+      VE_BAN_DAU();
+    }
+    else {
+      Serial.println("KHONG THE VE HOME LUC NAY");
+    }
+  }
+
+  else if (sscanf(lenh.c_str(), "NANG %f %f", &A, &B) == 2) {
+    if (!dangChay && cheDo == MANUAL) {
+      Serial.print("NANG A = ");
+      Serial.print(A);
+      Serial.print(" | B = ");
+      Serial.println(B);
+
+      NANG(A, B);
+    }
+    else {
+      Serial.println("DONG CO DANG CHAY HOAC DANG AUTO");
+    }
+  }
+
+  else if (sscanf(lenh.c_str(), "HA %f %f", &A, &B) == 2) {
+    if (!dangChay && cheDo == MANUAL) {
+      Serial.print("HA A = ");
+      Serial.print(A);
+      Serial.print(" | B = ");
+      Serial.println(B);
+
+      HA(A, B);
+    }
+    else {
+      Serial.println("DONG CO DANG CHAY HOAC DANG AUTO");
+    }
+  }
+
+  else if (sscanf(lenh.c_str(), "SPEED %d", &tocDo) == 1) {
+    if (tocDo > 0) {
+      SPEED_STEP = tocDo;
+
+      motorA.setMaxSpeed(SPEED_STEP);
+      motorB.setMaxSpeed(SPEED_STEP);
+
+      Serial.print("SPEED = ");
+      Serial.println(SPEED_STEP);
+    }
+  }
+
+  else if (lenh == "STOP") {
+    DUNG_DONG_CO();
+    cheDo = MANUAL;
+  }
+
+  else if (lenh == "MANUAL") {
+    if (dangChay) DUNG_DONG_CO();
+
+    cheDo = MANUAL;
+
+    Serial.println("CHE DO MANUAL");
+  }
+
+  else if (lenh == "AUTO") {
+    if (!dangChay) {
+      // Lay vi tri hien tai lam moc ban dau cua chu trinh AUTO
+      SET_MOC_BAN_DAU();
+
+      cheDo = AUTO;
+      trangThai = AUTO_NANG_1;
+      batDauBuoc = false;
+      mocThoiGian = millis();
+
+      Serial.println("============================");
+      Serial.println("BAT DAU CHU TRINH AUTO");
+      Serial.println("============================");
+    }
+    else {
+      Serial.println("DONG CO DANG CHAY");
+    }
+  }
+
+  else if (lenh == "HELP") {
+    Serial.println("========== CAC LENH ==========");
+    Serial.println("NANG A B");
+    Serial.println("HA A B");
+    Serial.println("POS");
+    Serial.println("SET0");
+    Serial.println("HOME");
+    Serial.println("SPEED n");
+    Serial.println("STOP");
+    Serial.println("MANUAL");
+    Serial.println("AUTO");
+    Serial.println("===============================");
+  }
+
+  else {
+    Serial.println("LENH KHONG HOP LE - GO HELP");
+  }
+
+  PROMPT();
+}
+
+void CHU_TRINH_AUTO() {
+  switch (trangThai) {
+
+    // =================================================
+    // BUOC 1: NANG 5 0
+    // =================================================
+    case AUTO_NANG_1:
+      if (!batDauBuoc) {
+        Serial.println("===== BUOC 1: NANG 5 0 =====");
+
+        NANG(10, 0);
+
+        batDauBuoc = true;
+      }
+
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("BUOC 1 HOAN THANH - CHO 3 GIAY");
+        CHUYEN_TRANG_THAI(CHO_1);
+      }
+      break;
+
+    case CHO_1:
+      if (millis() - mocThoiGian >= THOI_GIAN_CHO) {
+        CHUYEN_TRANG_THAI(AUTO_NANG_2);
+      }
+      break;
+
+    // =================================================
+    // BUOC 2: NANG 500 500
+    // =================================================
+    case AUTO_NANG_2:
+      if (!batDauBuoc) {
+        Serial.println("===== BUOC 2: NANG 500 500 =====");
+
+        NANG(500, 500);
+
+        batDauBuoc = true;
+      }
+
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("BUOC 2 HOAN THANH - CHO 3 GIAY");
+        CHUYEN_TRANG_THAI(CHO_2);
+      }
+      break;
+
+    case CHO_2:
+      if (millis() - mocThoiGian >= THOI_GIAN_CHO) {
+        CHUYEN_TRANG_THAI(AUTO_HA_3);
+      }
+      break;
+
+    // =================================================
+    // BUOC 3: HA -610 500
+    // =================================================
+    case AUTO_HA_3:
+      if (!batDauBuoc) {
+        Serial.println("===== BUOC 3: HA -615 500 =====");
+
+        HA(-615, 500);
+
+        batDauBuoc = true;
+      }
+
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("BUOC 3 HOAN THANH - CHO 3 GIAY");
+        CHUYEN_TRANG_THAI(CHO_3);
+      }
+      break;
+
+    case CHO_3:
+      if (millis() - mocThoiGian >= THOI_GIAN_CHO) {
+        CHUYEN_TRANG_THAI(AUTO_NANG_4);
+      }
+      break;
+
+    // =================================================
+    // BUOC 4: NANG -800 800
+    // =================================================
+    case AUTO_NANG_4:
+      if (!batDauBuoc) {
+        Serial.println("===== BUOC 4: NANG -800 800 =====");
+
+        NANG(-800, 800);
+
+        batDauBuoc = true;
+      }
+
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("BUOC 4 HOAN THANH - CHO 3 GIAY");
+        CHUYEN_TRANG_THAI(CHO_4);
+      }
+      break;
+
+    case CHO_4:
+      if (millis() - mocThoiGian >= THOI_GIAN_CHO) {
+        CHUYEN_TRANG_THAI(AUTO_HA_5);
+      }
+      break;
+
+    // =================================================
+    // BUOC 5: HA -800 800
+    // =================================================
+    case AUTO_HA_5:
+      if (!batDauBuoc) {
+        Serial.println("===== BUOC 5: HA -800 800 =====");
+
+        HA(-800, 800);
+
+        batDauBuoc = true;
+      }
+
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("BUOC 5 HOAN THANH - CHO 3 GIAY");
+        CHUYEN_TRANG_THAI(CHO_5);
+      }
+      break;
+
+    case CHO_5:
+      if (millis() - mocThoiGian >= THOI_GIAN_CHO) {
+        CHUYEN_TRANG_THAI(AUTO_NANG_6);
+      }
+      break;
+
+    // =================================================
+    // BUOC 6: NANG -2400 2400
+    // =================================================
+    case AUTO_NANG_6:
+      if (!batDauBuoc) {
+        Serial.println("===== BUOC 6: NANG -2200 2200 =====");
+
+        NANG(-2200, 2200);
+
+        batDauBuoc = true;
+      }
+
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("BUOC 6 HOAN THANH");
+        Serial.println("CHO 3 GIAY ROI VE VI TRI BAN DAU");
+
+        CHUYEN_TRANG_THAI(CHO_VE_HOME);
+      }
+      break;
+
+    // =================================================
+    // CHO TRUOC KHI VE HOME
+    // =================================================
+    case CHO_VE_HOME:
+      if (millis() - mocThoiGian >= THOI_GIAN_CHO) {
+        CHUYEN_TRANG_THAI(VE_HOME);
+      }
+      break;
+
+    // =================================================
+    // VE VI TRI BAN DAU
+    // =================================================
+    case VE_HOME:
+      if (!batDauBuoc) {
+        Serial.println("===== DANG VE VI TRI BAN DAU =====");
+
+        VE_BAN_DAU();
+
+        batDauBuoc = true;
+      }
+
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("DA VE LAI VI TRI BAN DAU 0,0");
+
+        CHUYEN_TRANG_THAI(HOAN_THANH);
+      }
+      break;
+
+    // =================================================
+    // HOAN THANH
+    // =================================================
+    case HOAN_THANH:
+      if (!batDauBuoc) {
+        Serial.println("============================");
+        Serial.println("CHU TRINH AUTO HOAN THANH");
+        Serial.println("============================");
+
+        IN_VI_TRI();
+
+        batDauBuoc = true;
+        cheDo = MANUAL;
+
+        PROMPT();
+      }
+      break;
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  motorA.setMaxSpeed(SPEED_STEP);
+  motorB.setMaxSpeed(SPEED_STEP);
+
+  motorA.setMinPulseWidth(10);
+  motorB.setMinPulseWidth(10);
+
+  steppers.addStepper(motorA);
+  steppers.addStepper(motorB);
+
+  SET_MOC_BAN_DAU();
+
+  Serial.println("================================");
+  Serial.println("ESP32 S3 - 2 STEPPER READY");
+  Serial.println("--------------------------------");
+  Serial.println("MANUAL: DUNG DE DO THONG SO");
+  Serial.println("AUTO: CHAY THONG SO DA DO");
+  Serial.println("--------------------------------");
+  Serial.println("CHU TRINH AUTO:");
+  Serial.println("1. NANG 5 0");
+  Serial.println("2. NANG 500 500");
+  Serial.println("3. HA -610 500");
+  Serial.println("4. NANG -700 700");
+  Serial.println("5. HA -700 700");
+  Serial.println("6. NANG -2600 2600");
+  Serial.println("7. VE HOME 0,0");
+  Serial.println("================================");
+
+  PROMPT();
+}
+
+void loop() {
+  String lenh;
+
+  if (DOC_SERIAL(lenh)) {
+    XU_LY_SERIAL(lenh);
+  }
+
+  if (cheDo == MANUAL) {
+    if (dangChay) {
+      if (CAP_NHAT_DONG_CO()) {
+        Serial.println("DI CHUYEN HOAN THANH");
+        IN_VI_TRI();
+        PROMPT();
+      }
+    }
+  }
+  else {
+    CHU_TRINH_AUTO();
+  }
+}
