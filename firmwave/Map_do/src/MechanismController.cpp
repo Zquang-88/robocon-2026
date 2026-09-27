@@ -23,6 +23,11 @@ void MechanismController::begin(MechanismConfig &config) {
   motorB_.setMinPulseWidth(HardwareConfig::STEPPER_MIN_PULSE_US);
   pinMode(HardwareConfig::HOME_SWITCH_A_PIN, INPUT_PULLUP);
   pinMode(HardwareConfig::HOME_SWITCH_B_PIN, INPUT_PULLUP);
+  pinMode(HardwareConfig::RGB_GREEN_PIN, OUTPUT);
+  pinMode(HardwareConfig::RGB_RED_PIN, OUTPUT);
+  pinMode(HardwareConfig::RGB_BLUE_PIN, OUTPUT);
+  competitionField_ = MechanismField::Red;
+  updateFieldLed();
   // main.cpp performs an early safe-off before slower startup work. Keep this
   // retry for tests and for recovery when that first I2C probe did not succeed.
   if (!valves_.healthy()) valves_.begin();
@@ -33,6 +38,26 @@ void MechanismController::begin(MechanismConfig &config) {
   emergencyStop("BOOT_SAFE");
   clearFault();
   startHome();
+}
+
+void MechanismController::updateFieldLed() {
+  const uint8_t on = HardwareConfig::RGB_LED_ACTIVE_HIGH ? HIGH : LOW;
+  const uint8_t off = HardwareConfig::RGB_LED_ACTIVE_HIGH ? LOW : HIGH;
+  digitalWrite(HardwareConfig::RGB_GREEN_PIN, off);
+  digitalWrite(HardwareConfig::RGB_RED_PIN,
+               competitionField_ == MechanismField::Red ? on : off);
+  digitalWrite(HardwareConfig::RGB_BLUE_PIN,
+               competitionField_ == MechanismField::Blue ? on : off);
+}
+
+bool MechanismController::setCompetitionField(MechanismField field) {
+  // FIELD only selects routing for a future POINT_A/POINT_B action. It is safe
+  // to accept it while HOME is running, which lets Teensy synchronize at boot.
+  // Never change it halfway through an active competition action.
+  if (state_ == State::Competition) return false;
+  competitionField_ = field;
+  updateFieldLed();
+  return true;
 }
 
 const StepperProfile &MechanismController::profile() const {
@@ -154,7 +179,8 @@ bool MechanismController::startProfile(ProfileId id) {
 bool MechanismController::startCompetitionAction(CompetitionAction action) {
   if (!config_ || busy_ || fault_ != MechanismFault::None || !zeroed_)
     return false;
-  if (action != CompetitionAction::ReadyHomeA && !valves_.healthy()) {
+  if (action != CompetitionAction::ReadyHomeA &&
+      action != CompetitionAction::BridgeBFinish && !valves_.healthy()) {
     setFault(MechanismFault::Pcf8574Unavailable, "PCF8574_NOT_FOUND");
     return false;
   }
@@ -173,6 +199,8 @@ bool MechanismController::startCompetitionAction(CompetitionAction action) {
     case CompetitionAction::ReadyHomeA: setOperationName("ROBOT_START"); break;
     case CompetitionAction::PointA: setOperationName("PICK_A"); break;
     case CompetitionAction::PointB: setOperationName("PICK_B"); break;
+    case CompetitionAction::PointC: setOperationName("PICK_C"); break;
+    case CompetitionAction::BridgeBFinish: setOperationName("BRIDGE_B"); break;
     case CompetitionAction::Drop2A: setOperationName("THA2A"); break;
     case CompetitionAction::Drop2B: setOperationName("THA2B"); break;
   }
@@ -286,6 +314,44 @@ void MechanismController::queueValveSwitchLog(uint8_t pin, bool enabled) {
            valveSequenceName_, pin, enabled ? "ON" : "OFF",
            opposite, enabled ? "OFF" : "ON");
   queueValveLog(line);
+}
+
+bool MechanismController::startSimultaneousValveOutputs(
+    const char *name, uint8_t firstPin, uint8_t secondPin) {
+  if (!valves_.healthy() || valves_.switchBusy() ||
+      valveSequenceState_ != ValveSequenceState::Idle) {
+    setFault(valves_.healthy() ? MechanismFault::ValveInterlock
+                               : MechanismFault::Pcf8574Unavailable,
+             valves_.healthy() ? "VALVE_SEQUENCE_BUSY"
+                               : "PCF8574_NOT_FOUND");
+    return false;
+  }
+  if (firstPin >= HardwareConfig::VALVE_COUNT ||
+      secondPin >= HardwareConfig::VALVE_COUNT || firstPin == secondPin ||
+      static_cast<uint8_t>(firstPin + secondPin) == 7U) {
+    setFault(MechanismFault::ValveInterlock, "VALVE_PAIR_INVALID");
+    return false;
+  }
+
+  uint8_t enabledMask = valves_.mask();
+  const uint8_t firstOpposite = static_cast<uint8_t>(7U - firstPin);
+  const uint8_t secondOpposite = static_cast<uint8_t>(7U - secondPin);
+  enabledMask = static_cast<uint8_t>(
+      enabledMask & ~(static_cast<uint8_t>((1U << firstOpposite) |
+                                           (1U << secondOpposite))));
+  enabledMask = static_cast<uint8_t>(
+      enabledMask | static_cast<uint8_t>((1U << firstPin) |
+                                         (1U << secondPin)));
+  if (!valves_.setMask(enabledMask)) {
+    setFault(MechanismFault::Pcf8574Unavailable, "PCF8574_WRITE");
+    return false;
+  }
+
+  char line[64];
+  snprintf(line, sizeof(line), "[%s] P%u + P%u ON TOGETHER",
+           name ? name : "VALVE", firstPin, secondPin);
+  queueValveLog(line);
+  return true;
 }
 
 bool MechanismController::startValveSequence(
@@ -525,14 +591,49 @@ void MechanismController::updatePostDrop2BReturnAToHome() {
 void MechanismController::updateCompetitionAction() {
   const float readyA = HardwareConfig::READY_HOME_A_POSITION_A_MM;
   const float readyB = HardwareConfig::READY_HOME_A_POSITION_B_MM;
-  const float pickupA = readyA + HardwareConfig::PICK_LOWER_DIRECTION_A *
-                                   HardwareConfig::PICK_LOWER_DISTANCE_MM;
-  const float pickupB = readyB + HardwareConfig::PICK_LOWER_DIRECTION_B *
-                                   HardwareConfig::PICK_LOWER_DISTANCE_MM;
-  const float highA = readyA + HardwareConfig::POST_POINT_B_RAISE_DIRECTION_A *
-                                  HardwareConfig::POST_POINT_B_RAISE_DISTANCE_MM;
-  const float highB = readyB + HardwareConfig::POST_POINT_B_RAISE_DIRECTION_B *
-                                  HardwareConfig::POST_POINT_B_RAISE_DISTANCE_MM;
+  const bool blueField = competitionField_ == MechanismField::Blue;
+  const float pointALowerA = blueField
+      ? HardwareConfig::BLUE_POINT_A_LOWER_DISTANCE_A_MM
+      : HardwareConfig::RED_POINT_A_LOWER_DISTANCE_A_MM;
+  const float pointALowerB = blueField
+      ? HardwareConfig::BLUE_POINT_A_LOWER_DISTANCE_B_MM
+      : HardwareConfig::RED_POINT_A_LOWER_DISTANCE_B_MM;
+  const float pointBLowerA = blueField
+      ? HardwareConfig::BLUE_POINT_B_LOWER_DISTANCE_A_MM
+      : HardwareConfig::RED_POINT_B_LOWER_DISTANCE_A_MM;
+  const float pointBLowerB = blueField
+      ? HardwareConfig::BLUE_POINT_B_LOWER_DISTANCE_B_MM
+      : HardwareConfig::RED_POINT_B_LOWER_DISTANCE_B_MM;
+  const float pointAPickupA =
+      readyA + HardwareConfig::PICK_LOWER_DIRECTION_A *
+                   pointALowerA;
+  const float pointAPickupB =
+      readyB + HardwareConfig::PICK_LOWER_DIRECTION_B *
+                   pointALowerB;
+  const float pointBPickupA =
+      readyA + HardwareConfig::PICK_LOWER_DIRECTION_A *
+                   pointBLowerA;
+  const float pointBPickupB =
+      readyB + HardwareConfig::PICK_LOWER_DIRECTION_B *
+                   pointBLowerB;
+  const float pointCPickupA =
+      readyA + HardwareConfig::PICK_LOWER_DIRECTION_A *
+                   HardwareConfig::POINT_C_LOWER_DISTANCE_A_MM;
+  const float pointCPickupB =
+      readyB + HardwareConfig::PICK_LOWER_DIRECTION_B *
+                   HardwareConfig::POINT_C_LOWER_DISTANCE_B_MM;
+  const float pointBFinalA =
+      readyA + HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_A *
+                   HardwareConfig::POINT_B_FINAL_RAISE_DISTANCE_MM;
+  const float pointBFinalB =
+      readyB + HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_B *
+                   HardwareConfig::POINT_B_FINAL_RAISE_DISTANCE_MM;
+  const float pointBFirstStageA =
+      readyA + HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_A *
+                   HardwareConfig::POINT_B_FIRST_STAGE_A_DISTANCE_MM;
+  const float pointBFirstStageB =
+      readyB + HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_B *
+                   HardwareConfig::POINT_B_FIRST_STAGE_B_DISTANCE_MM;
   const float speed = HardwareConfig::COMPETITION_SPEED_STEPS_S;
   const float accel = HardwareConfig::COMPETITION_ACCEL_STEPS_S2;
 
@@ -549,35 +650,87 @@ void MechanismController::updateCompetitionAction() {
       break;
 
     case CompetitionAction::PointA:
-      if (actionStep_ == 0) issueMove(pickupA, pickupB);
+      if (actionStep_ == 0) issueMove(pointAPickupA, pointAPickupB);
       else if (actionStep_ == 1 && motorsAtTarget()) {
         motionIssued_ = false;
-        if (startValveSequence("POINT_A", 2, true, 3, true,
-                               HardwareConfig::VALVE_SEQUENCE_WAIT_MS))
+        // RED keeps the proven original routing. BLUE mirrors the two pickup
+        // clusters. ValveController still enforces each opposite-coil lock.
+        const bool blue = competitionField_ == MechanismField::Blue;
+        if (startSimultaneousValveOutputs(
+                "POINT_A", blue ? 0 : 2, blue ? 1 : 3))
           advanceActionStep();
-      } else if (actionStep_ == 2 && consumeValveSequenceComplete()) {
+      } else if (actionStep_ == 2 && !valves_.switchBusy()) {
         advanceActionStep();
       } else if (actionStep_ == 3) issueMove(readyA, readyB);
       else if (actionStep_ == 4 && motorsAtTarget()) completeOperation();
       break;
 
     case CompetitionAction::PointB:
-      if (actionStep_ == 0) issueMove(pickupA, pickupB);
+    case CompetitionAction::PointC: {
+      const bool pointC = competitionAction_ == CompetitionAction::PointC;
+      if (actionStep_ == 0)
+        issueMove(pointC ? pointCPickupA : pointBPickupA,
+                  pointC ? pointCPickupB : pointBPickupB);
       else if (actionStep_ == 1 && motorsAtTarget()) {
         motionIssued_ = false;
-        if (startValveSequence("POINT_B", 0, true, 1, true,
-                               HardwareConfig::VALVE_SEQUENCE_WAIT_MS))
+        const bool blue = competitionField_ == MechanismField::Blue;
+        if (startSimultaneousValveOutputs(
+                pointC ? "POINT_C" : "POINT_B",
+                blue ? 2 : 0, blue ? 3 : 1))
           advanceActionStep();
-      } else if (actionStep_ == 2 && consumeValveSequenceComplete()) {
+      } else if (actionStep_ == 2 && !valves_.switchBusy()) {
         advanceActionStep();
-      } else if (actionStep_ == 3) issueMove(readyA, readyB);
-      else if (actionStep_ == 4 && motorsAtTarget()) {
+      } else if (actionStep_ == 3) {
+        if (!motionIssued_ && issueAbsoluteMotion(
+                readyA, readyB,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2))
+          advanceActionStep();
+      } else if (actionStep_ == 4 && motorsAtTarget()) {
         motionIssued_ = false;
         advanceActionStep();
-      } else if (actionStep_ == 5) issueMove(highA, highB);
-      else if (actionStep_ == 6 && motorsAtTarget()) completeOperation();
+      } else if (actionStep_ == 5) {
+        if (!motionIssued_ && issueAbsoluteMotion(
+                pointBFirstStageA, pointBFirstStageB,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2))
+          advanceActionStep();
+      } else if (actionStep_ == 6 && motorsAtTarget()) {
+        // A has travelled 850 mm while B has travelled one third of 1700 mm.
+        // Park B here and let only A continue to its full-height target.
+        motionIssued_ = false;
+        advanceActionStep();
+      } else if (actionStep_ == 7) {
+        if (!motionIssued_ && issueAbsoluteMotion(
+                pointBFinalA, pointBFirstStageB,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2))
+          advanceActionStep();
+      } else if (actionStep_ == 8 && motorsAtTarget()) {
+        completeOperation();
+      }
+      break;}
+    case CompetitionAction::BridgeBFinish:
+      if (actionStep_ == 0) {
+        // A is already at its 1700 mm target and therefore holds position.
+        // Only B travels the remaining two thirds after bridge confirmation.
+        if (!motionIssued_ && issueAbsoluteMotion(
+                pointBFinalA, pointBFinalB,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_SPEED_STEPS_S,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2,
+                HardwareConfig::POINT_B_LIFT_ACCEL_STEPS_S2))
+          advanceActionStep();
+      } else if (actionStep_ == 1 && motorsAtTarget()) {
+        completeOperation();
+      }
       break;
-
     case CompetitionAction::Drop2A:
       if (actionStep_ == 0) {
         if (startValveSequence("THA_2A", 1, false, 3, false,
@@ -590,7 +743,11 @@ void MechanismController::updateCompetitionAction() {
 
     case CompetitionAction::Drop2B:
       if (actionStep_ == 0) {
-        if (startValveSequence("THA_2B", 2, false, 0, false,
+        // BLUE mirrors the release order: switch P0 first, then P2.
+        // RED keeps the proven P2 -> P0 order.
+        const bool blue = competitionField_ == MechanismField::Blue;
+        if (startValveSequence("THA_2B", blue ? 0 : 2, false,
+                               blue ? 2 : 0, false,
                                HardwareConfig::THA2B_FIRST_TO_SECOND_OUTPUT_MS))
           advanceActionStep();
       } else if (actionStep_ == 1 && consumeValveSequenceComplete()) {
@@ -611,7 +768,8 @@ void MechanismController::updateCompetitionAction() {
 void MechanismController::updateHome() {
   const uint32_t now = millis();
 
-  if (!homeADone_) {
+  // GPIO12 recovery holds A until B has confirmed HOME37.
+  if (!homeADone_ && (!homeBFirst_ || homeBDone_)) {
     if (homeSwitchAActive()) {
       motorA_.setCurrentPosition(motorA_.currentPosition());
       if (!homeAActiveSinceMs_) homeAActiveSinceMs_ = now;
@@ -760,6 +918,17 @@ bool MechanismController::setValve(uint8_t index, bool enabled) {
   return true;
 }
 
+bool MechanismController::setValveMask(uint8_t enabledMask) {
+  if (busy_ || fault_ != MechanismFault::None || valves_.switchBusy())
+    return false;
+  if (!valves_.setMask(enabledMask)) {
+    if (!valves_.healthy())
+      setFault(MechanismFault::Pcf8574Unavailable, "PCF8574_WRITE");
+    return false;
+  }
+  return true;
+}
+
 bool MechanismController::allValveCoilsOff() {
   valves_.allValveCoilsOff();
   if (valves_.healthy()) return true;
@@ -773,7 +942,7 @@ void MechanismController::setSoftwareZero() {
   zeroed_ = true;
 }
 
-bool MechanismController::startHome() {
+bool MechanismController::startHome(bool sequentialBFirst) {
   if (!config_ || busy_ || fault_ != MechanismFault::None ||
       !HardwareConfig::HAS_HOME_SWITCH)
     return false;
@@ -782,15 +951,20 @@ bool MechanismController::startHome() {
   zeroed_ = false;
   homeADone_ = false;
   homeBDone_ = false;
+  homeBFirst_ = sequentialBFirst;
   homeAActiveSinceMs_ = 0;
   homeBActiveSinceMs_ = 0;
-  motorA_.setMaxSpeed(HardwareConfig::HOME_SPEED_STEPS_S);
-  motorB_.setMaxSpeed(HardwareConfig::HOME_SPEED_STEPS_S);
-  motorA_.setAcceleration(HardwareConfig::HOME_ACCEL_STEPS_S2);
-  motorB_.setAcceleration(HardwareConfig::HOME_ACCEL_STEPS_S2);
-  motorA_.moveTo(motorA_.currentPosition() +
+  const float speed = sequentialBFirst ? HardwareConfig::BUTTON_HOME_SPEED_STEPS_S
+                                      : HardwareConfig::HOME_SPEED_STEPS_S;
+  const float accel = sequentialBFirst ? HardwareConfig::BUTTON_HOME_ACCEL_STEPS_S2
+                                      : HardwareConfig::HOME_ACCEL_STEPS_S2;
+  motorA_.setMaxSpeed(speed);
+  motorB_.setMaxSpeed(speed);
+  motorA_.setAcceleration(accel);
+  motorB_.setAcceleration(accel);
+  motorA_.moveTo(motorA_.currentPosition() + (sequentialBFirst ? 0L :
                  HardwareConfig::HOME_DIRECTION_A *
-                 HardwareConfig::HOME_SEARCH_STEPS);
+                 HardwareConfig::HOME_SEARCH_STEPS));
   motorB_.moveTo(motorB_.currentPosition() +
                  HardwareConfig::HOME_DIRECTION_B *
                  HardwareConfig::HOME_SEARCH_STEPS);
@@ -798,7 +972,8 @@ bool MechanismController::startHome() {
   state_ = State::Homing;
   operationStartedMs_ = millis();
   operationDeadlineMs_ =
-      operationStartedMs_ + HardwareConfig::HOME_TIMEOUT_MS;
+      operationStartedMs_ + (sequentialBFirst ? HardwareConfig::BUTTON_HOME_TIMEOUT_MS
+                                           : HardwareConfig::HOME_TIMEOUT_MS);
   doneEvent_ = false;
   return true;
 }

@@ -25,8 +25,15 @@ enum class CompetitionAction : uint8_t {
   ReadyHomeA = 0,
   PointA,
   PointB,
+  PointC,
+  BridgeBFinish,
   Drop2A,
   Drop2B
+};
+
+enum class MechanismField : uint8_t {
+  Red = 0,
+  Blue = 1
 };
 
 class MechanismController {
@@ -38,14 +45,20 @@ class MechanismController {
   void update();
   bool startProfile(ProfileId id);
   bool startCompetitionAction(CompetitionAction action);
+  bool setCompetitionField(MechanismField field);
+  MechanismField competitionField() const { return competitionField_; }
+  const char *competitionFieldName() const {
+    return competitionField_ == MechanismField::Blue ? "BLUE" : "RED";
+  }
   bool startDirectMove(float signedAmm, float signedBmm,
                        float speedStepsPerSecond);
   bool setJog(float signedSpeedA, float signedSpeedB);
   void stopJog();
   bool setValve(uint8_t index, bool enabled);
+  bool setValveMask(uint8_t enabledMask);
   bool allValveCoilsOff();
   void setSoftwareZero();
-  bool startHome();
+  bool startHome(bool sequentialBFirst = false);
   void emergencyStop(const char *reason = "STOP");
   void clearFault();
 
@@ -125,10 +138,12 @@ class MechanismController {
 
   bool homeADone_ = false;
   bool homeBDone_ = false;
+  bool homeBFirst_ = false;
   uint32_t homeAActiveSinceMs_ = 0;
   uint32_t homeBActiveSinceMs_ = 0;
 
   CompetitionAction competitionAction_ = CompetitionAction::ReadyHomeA;
+  MechanismField competitionField_ = MechanismField::Red;
   uint8_t actionStep_ = 0;
 
   ValveSequenceState valveSequenceState_ = ValveSequenceState::Idle;
@@ -156,6 +171,8 @@ class MechanismController {
   bool targetsWithinLimits(float targetAmm, float targetBmm) const;
   bool sensorValue(uint8_t sensorIndex, bool &available) const;
   bool motorsAtTarget() const;
+  bool startSimultaneousValveOutputs(const char *name,
+                                     uint8_t firstPin, uint8_t secondPin);
   bool startValveSequence(const char *name,
                           uint8_t firstPin, bool firstEnabled,
                           uint8_t secondPin, bool secondEnabled,
@@ -173,6 +190,7 @@ class MechanismController {
   void updatePostDrop2BLowerToBHome();
   void updatePostDrop2BReturnAToHome();
   void updateCompetitionAction();
+  void updateFieldLed();
   void advanceActionStep();
   void advanceStep();
   void completeOperation();

@@ -40,8 +40,10 @@ struct WheelChannel {
   int8_t motorSign;
   int8_t encoderSign;
   PidController pid;
-  float kff;
-  int deadzone;
+  float kffPositive;
+  float kffNegative;
+  int deadzonePositive;
+  int deadzoneNegative;
   long count = 0;
   long previousCount = 0;
   float speedMmS = 0.0f;
@@ -56,13 +58,21 @@ Encoder encoderBR(RR_ENC_A, RR_ENC_B);
 
 WheelChannel wheels[WHEEL_COUNT] = {
     {&encoderFL, FL_RPWM, FL_LPWM, MOTOR_SIGN_FL, ENCODER_SIGN_FL,
-     {WHEEL_KP[0], WHEEL_KI[0], WHEEL_KD[0]}, WHEEL_KFF[0], WHEEL_DEADZONE_PWM[0]},
+     {WHEEL_KP[0], WHEEL_KI[0], WHEEL_KD[0]}, WHEEL_KFF_POSITIVE[0],
+     WHEEL_KFF_NEGATIVE[0], WHEEL_DEADZONE_PWM_POSITIVE[0],
+     WHEEL_DEADZONE_PWM_NEGATIVE[0]},
     {&encoderFR, FR_RPWM, FR_LPWM, MOTOR_SIGN_FR, ENCODER_SIGN_FR,
-     {WHEEL_KP[1], WHEEL_KI[1], WHEEL_KD[1]}, WHEEL_KFF[1], WHEEL_DEADZONE_PWM[1]},
+     {WHEEL_KP[1], WHEEL_KI[1], WHEEL_KD[1]}, WHEEL_KFF_POSITIVE[1],
+     WHEEL_KFF_NEGATIVE[1], WHEEL_DEADZONE_PWM_POSITIVE[1],
+     WHEEL_DEADZONE_PWM_NEGATIVE[1]},
     {&encoderBL, RL_RPWM, RL_LPWM, MOTOR_SIGN_RL, ENCODER_SIGN_RL,
-     {WHEEL_KP[2], WHEEL_KI[2], WHEEL_KD[2]}, WHEEL_KFF[2], WHEEL_DEADZONE_PWM[2]},
+     {WHEEL_KP[2], WHEEL_KI[2], WHEEL_KD[2]}, WHEEL_KFF_POSITIVE[2],
+     WHEEL_KFF_NEGATIVE[2], WHEEL_DEADZONE_PWM_POSITIVE[2],
+     WHEEL_DEADZONE_PWM_NEGATIVE[2]},
     {&encoderBR, RR_RPWM, RR_LPWM, MOTOR_SIGN_RR, ENCODER_SIGN_RR,
-     {WHEEL_KP[3], WHEEL_KI[3], WHEEL_KD[3]}, WHEEL_KFF[3], WHEEL_DEADZONE_PWM[3]}
+     {WHEEL_KP[3], WHEEL_KI[3], WHEEL_KD[3]}, WHEEL_KFF_POSITIVE[3],
+     WHEEL_KFF_NEGATIVE[3], WHEEL_DEADZONE_PWM_POSITIVE[3],
+     WHEEL_DEADZONE_PWM_NEGATIVE[3]}
 };
 
 const char *const WHEEL_NAMES[WHEEL_COUNT] = {"FL", "FR", "BL", "BR"};
@@ -115,7 +125,9 @@ void printHelp() {
   Serial.println("  RUN4_MMS <FL> <FR> <BL> <BR> [seconds]");
   Serial.println("  PID <FL|FR|BL|BR> <kp> <ki> <kd>");
   Serial.println("  FF <FL|FR|BL|BR> <kff>");
+  Serial.println("  FFDIR <FL|FR|BL|BR> <positive> <negative>");
   Serial.println("  DEADZONE <FL|FR|BL|BR> <pwm>");
+  Serial.println("  DEADZONEDIR <FL|FR|BL|BR> <positive> <negative>");
   Serial.println("  STOP | STATUS | HELP");
   Serial.println("Example: TEST FL 60 5");
   Serial.println("Example: RUN4_MMS 300 300 300 300 5");
@@ -123,14 +135,16 @@ void printHelp() {
 }
 
 void printStatus() {
-  Serial.println("CONFIG,wheel,kp,ki,kd,kff,deadzone");
+  Serial.println("CONFIG,wheel,kp,ki,kd,kff_pos,kff_neg,dz_pos,dz_neg");
   for (uint8_t i = 0; i < WHEEL_COUNT; ++i) {
     Serial.print("CONFIG,"); Serial.print(WHEEL_NAMES[i]); Serial.print(',');
     Serial.print(wheels[i].pid.kp, 6); Serial.print(',');
     Serial.print(wheels[i].pid.ki, 6); Serial.print(',');
     Serial.print(wheels[i].pid.kd, 6); Serial.print(',');
-    Serial.print(wheels[i].kff, 6); Serial.print(',');
-    Serial.println(wheels[i].deadzone);
+    Serial.print(wheels[i].kffPositive, 6); Serial.print(',');
+    Serial.print(wheels[i].kffNegative, 6); Serial.print(',');
+    Serial.print(wheels[i].deadzonePositive); Serial.print(',');
+    Serial.println(wheels[i].deadzoneNegative);
   }
 }
 
@@ -201,15 +215,34 @@ void processCommand(char *line) {
     wheels[index].pid.kp = a; wheels[index].pid.ki = b; wheels[index].pid.kd = c;
     wheels[index].pid.reset(); Serial.println("ACK,PID"); return;
   }
+  if (sscanf(line, "FFDIR %3s %f %f", name, &a, &b) == 3 &&
+      (index = wheelIndex(name)) >= 0 && a >= 0 && a <= 1.0f &&
+      b >= 0 && b <= 1.0f) {
+    wheels[index].kffPositive = a; wheels[index].kffNegative = b;
+    wheels[index].pid.reset(); Serial.println("ACK,FFDIR"); return;
+  }
   if (sscanf(line, "FF %3s %f", name, &a) == 2 &&
       (index = wheelIndex(name)) >= 0 && a >= 0 && a <= 1.0f) {
-    wheels[index].kff = a; wheels[index].pid.reset();
+    wheels[index].kffPositive = a; wheels[index].kffNegative = a;
+    wheels[index].pid.reset();
     Serial.println("ACK,FF"); return;
   }
   int deadzone = 0;
+  int deadzoneNegative = 0;
+  if (sscanf(line, "DEADZONEDIR %3s %d %d", name, &deadzone,
+             &deadzoneNegative) == 3 &&
+      (index = wheelIndex(name)) >= 0 && deadzone >= 0 &&
+      deadzone < PWM_MAX && deadzoneNegative >= 0 &&
+      deadzoneNegative < PWM_MAX) {
+    wheels[index].deadzonePositive = deadzone;
+    wheels[index].deadzoneNegative = deadzoneNegative;
+    wheels[index].pid.reset(); Serial.println("ACK,DEADZONEDIR"); return;
+  }
   if (sscanf(line, "DEADZONE %3s %d", name, &deadzone) == 2 &&
       (index = wheelIndex(name)) >= 0 && deadzone >= 0 && deadzone < PWM_MAX) {
-    wheels[index].deadzone = deadzone; wheels[index].pid.reset();
+    wheels[index].deadzonePositive = deadzone;
+    wheels[index].deadzoneNegative = deadzone;
+    wheels[index].pid.reset();
     Serial.println("ACK,DEADZONE"); return;
   }
   Serial.println("ERR,BAD_COMMAND (type HELP)");
@@ -246,8 +279,12 @@ void updateControl(float dt) {
     if (!(activeWheelMask & (1U << i)) || fabsf(wheel.targetMmS) < 0.5f) {
       wheel.pwm = 0; wheel.pid.reset(); writeMotor(wheel, 0); continue;
     }
-    const float sign = wheel.targetMmS > 0.0f ? 1.0f : -1.0f;
-    const float ff = wheel.kff * wheel.targetMmS + sign * wheel.deadzone;
+    const bool positive = wheel.targetMmS > 0.0f;
+    const float sign = positive ? 1.0f : -1.0f;
+    const float kff = positive ? wheel.kffPositive : wheel.kffNegative;
+    const int deadzone = positive ? wheel.deadzonePositive
+                                  : wheel.deadzoneNegative;
+    const float ff = kff * wheel.targetMmS + sign * deadzone;
     const float correction = wheel.pid.update(
         wheel.targetMmS - wheel.speedMmS, dt, -PWM_MAX - ff, PWM_MAX - ff);
     wheel.pwm = constrain(lroundf(ff + correction), -PWM_MAX, PWM_MAX);

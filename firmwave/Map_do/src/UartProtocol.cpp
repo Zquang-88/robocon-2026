@@ -9,7 +9,7 @@
 #include "HardwareConfig.h"
 
 namespace {
-constexpr uint8_t POINT_B_RETRACT_ACTIVE_STEP = 4;
+constexpr uint8_t POINT_B_FINAL_LIFT_ACTIVE_STEP = 6;
 constexpr uint8_t DROP_2B_HOME_ACTIVE_STEP = 2;
 
 char *trimAscii(char *text) {
@@ -45,11 +45,16 @@ UartProtocol::UartProtocol(Stream &usb, Stream &robot,
       persistentConfig_(persistentConfig) {}
 
 void UartProtocol::begin() {
+  cancelButtonGestures();
   pinMode(HardwareConfig::E18_A_PIN, INPUT_PULLUP);
   pinMode(HardwareConfig::E18_B_PIN, INPUT_PULLUP);
   emit("BOOT,ESP32_MECHANISM,1");
   emit("ACK,UART2,RX16,TX15,57600");
   emit("ACK,HOME_SWITCHES,A36,B37,ACTIVE_LOW");
+  emit("ACK,LOCAL_BUTTONS,VALVES11,HOME12,ACTIVE_LOW");
+  emit("ACK,E18_INPUTS,A17,B18,ACTIVE_LOW");
+  emit("ACK,RGB_FIELD_LED,G19,R20,B21");
+  emitFieldStatus();
   emitCapabilities();
   if (controller_.valvesAvailable()) {
     char pcf[40];
@@ -123,6 +128,106 @@ void UartProtocol::updateE18() {
   emitE18Status();
 }
 
+void UartProtocol::cancelButtonGestures() {
+  valveClickPending_ = false;
+  valveDoubleClickCanEnable_ = false;
+  valveButton_.begin(HardwareConfig::VALVE_BUTTON_PIN);
+  homeButton_.begin(HardwareConfig::HOME_BUTTON_PIN);
+}
+
+void UartProtocol::emitFieldStatus() {
+  char line[32];
+  snprintf(line, sizeof(line), "ACK,FIELD,%s",
+           controller_.competitionFieldName());
+  emit(line);
+}
+
+void UartProtocol::closeValvesFromButton() {
+  // Stop the active sequence first, otherwise its next step could overwrite
+  // the requested closed state. A latched fault is never cleared here.
+  const bool canEnergizeCloseSide =
+      controller_.fault() == MechanismFault::None;
+  readyQueued_ = false;
+  e18Armed_ = false;
+  e18Latched_ = false;
+  e18BothSinceMs_ = 0;
+  controller_.emergencyStop("STOP");
+  resetCompetitionLatches();
+  emit("STOPPED");
+  if (!controller_.valvesAvailable()) {
+    emit("ERROR_PCF8574");
+  } else if (!canEnergizeCloseSide) {
+    emitError("BUTTON11_CLOSE_REJECTED", controller_.faultText());
+  } else if (!controller_.setValveMask(0xF0)) {
+    emitError("BUTTON11_CLOSE_REJECTED", controller_.faultText());
+  } else {
+    // Enabled-mask 0xF0 means P4-P7 active and P0-P3 inactive. The
+    // ValveController applies the common 50 ms break-before-make interval.
+    emitAck("BUTTON11,P4_P7_ON_CLOSED");
+  }
+  emitStatus();
+}
+
+void UartProtocol::updateLocalButtons() {
+  const uint32_t now = millis();
+  const bool valvePress = valveButton_.takePress();
+  const bool homePress = homeButton_.takePress();
+
+  if (homePress) {
+    valveClickPending_ = false;
+    if (controller_.busy()) {
+      emit("BUSY");
+      emitError("BUTTON12_HOME_REJECTED", "BUSY");
+    } else if (!controller_.startHome(true)) {
+      emitError("BUTTON12_HOME_REJECTED", controller_.faultText());
+    } else {
+      readyQueued_ = false;
+      resetCompetitionLatches();
+      emitAck("BUTTON12,HOME_B_THEN_A,8000,5500");
+      emitHomeStatus();
+      emitStatus();
+    }
+    return;
+  }
+
+  // Expire only the possibility of a second click. The first click has already
+  // requested the P4-P7 closed direction.
+  if (valveClickPending_ &&
+      now - valveFirstClickMs_ > HardwareConfig::BUTTON_DOUBLE_CLICK_MS) {
+    valveClickPending_ = false;
+    valveDoubleClickCanEnable_ = false;
+  }
+  if (!valvePress) return;
+  if (!valveClickPending_) {
+    valveDoubleClickCanEnable_ =
+        !controller_.busy() && controller_.fault() == MechanismFault::None;
+    valveFirstClickMs_ = now;
+    valveClickPending_ = true;
+    closeValvesFromButton();
+    return;
+  }
+
+  valveClickPending_ = false;
+  if (!valveDoubleClickCanEnable_) {
+    valveDoubleClickCanEnable_ = false;
+    emit("BUSY");
+    emitError("BUTTON11_ON_REJECTED", "BUSY");
+  } else if (controller_.busy()) {
+    valveDoubleClickCanEnable_ = false;
+    emit("BUSY");
+    emitError("BUTTON11_ON_REJECTED", "BUSY");
+  } else if (!controller_.setValveMask(0x0F)) {
+    valveDoubleClickCanEnable_ = false;
+    emitError("BUTTON11_ON_REJECTED", controller_.faultText());
+  } else {
+    valveDoubleClickCanEnable_ = false;
+    // One PCF mask selects all four work coils together, after the existing
+    // 50 ms pair interlock. Opposite coils P4-P7 remain HIGH/OFF.
+    emitAck("BUTTON11,P0_P3_ON_REQUESTED");
+    emitStatus();
+  }
+}
+
 void UartProtocol::emitError(const char *code, const char *detail) {
   char line[128];
   if (detail && *detail) snprintf(line, sizeof(line), "ERR,%s,%s", code, detail);
@@ -169,6 +274,8 @@ bool UartProtocol::runNamedProfile(const char *name) {
 void UartProtocol::resetCompetitionLatches() {
   pointAComplete_ = false;
   pointBComplete_ = false;
+  pointCComplete_ = false;
+  bridgeBComplete_ = false;
   drop2AComplete_ = false;
   drop2BComplete_ = false;
 }
@@ -183,6 +290,12 @@ bool UartProtocol::startCompetitionCommand(const char *wireCommand,
   } else if (action == CompetitionAction::PointB) {
     operation = "PICK_B";
     alreadyComplete = pointBComplete_;
+  } else if (action == CompetitionAction::PointC) {
+    operation = "PICK_C";
+    alreadyComplete = pointCComplete_;
+  } else if (action == CompetitionAction::BridgeBFinish) {
+    operation = "BRIDGE_B";
+    alreadyComplete = bridgeBComplete_;
   } else if (action == CompetitionAction::Drop2A) {
     operation = "THA2A";
     alreadyComplete = drop2AComplete_;
@@ -202,6 +315,8 @@ bool UartProtocol::startCompetitionCommand(const char *wireCommand,
   } else if (alreadyComplete) {
     if (action == CompetitionAction::PointA) emit("DONE_POINT_A");
     else if (action == CompetitionAction::PointB) emit("DONE_POINT_B");
+    else if (action == CompetitionAction::PointC) emit("DONE_POINT_C");
+    else if (action == CompetitionAction::BridgeBFinish) emit("DONE_BRIDGE_B");
     else if (action == CompetitionAction::Drop2A) emit("DONE_THA_2A");
     else if (action == CompetitionAction::Drop2B) emit("DONE_THA_2B");
     return true;
@@ -272,6 +387,7 @@ bool UartProtocol::updateProfile(const char *arguments) {
 void UartProtocol::emitCapabilities() {
   emit("CAPS,JOG,1,500,10,30000");
   emit("CAPS,PCF,0X20,ACTIVE_LOW,PAIRS,P0-P7,P1-P6,P2-P5,P3-P4");
+  emit("CAPS,BRIDGE_STAGED_LIFT,A1700,B566.7_PLUS_1133.3");
 }
 
 void UartProtocol::processJog(const char *arguments) {
@@ -304,6 +420,7 @@ void UartProtocol::processLine(char *rawLine) {
 
   if (strcmp(line, "STOP") == 0 || strcmp(line, "ESTOP") == 0 ||
       strcmp(line, "CMD,STOP") == 0) {
+    cancelButtonGestures();
     readyQueued_ = false;
     e18Armed_ = false; e18Latched_ = false; e18BothSinceMs_ = 0;
     controller_.emergencyStop("STOP");
@@ -322,6 +439,7 @@ void UartProtocol::processLine(char *rawLine) {
     emit("HELP,PCF,ALL,OFF");
     emit("HELP,PCF,STATUS");
     emit("HELP,LEGACY,VALVE,1-8,0-1");
+    emit("HELP,BRIDGE_STABLE,FINISH_B_REMAINING_1133.3MM");
     return;
   }
   // Idempotent post-bridge handshake. A retry must be safe and must not
@@ -349,6 +467,18 @@ void UartProtocol::processLine(char *rawLine) {
   }
   if (strcmp(line, "POINT_B") == 0) {
     startCompetitionCommand(line, CompetitionAction::PointB);
+    return;
+  }
+  if (strcmp(line, "POINT_C") == 0) {
+    startCompetitionCommand(line, CompetitionAction::PointC);
+    return;
+  }
+  if (strcmp(line, "BRIDGE_STABLE") == 0) {
+    if (!pointBComplete_ && !pointCComplete_) {
+      emitError("SEQUENCE", "BRIDGE_REQUIRES_POINT_B_OR_C");
+      return;
+    }
+    startCompetitionCommand(line, CompetitionAction::BridgeBFinish);
     return;
   }
   if (strcmp(line, "DONE_THA_2A") == 0 ||
@@ -414,7 +544,26 @@ void UartProtocol::processLine(char *rawLine) {
     if (!controller_.startHome()) emitError("HOME_REJECTED", controller_.faultText());
     else emitAck("STARTED,HOME");
   } else if (strncmp(line, "CMD,", 4) == 0) runNamedProfile(line + 4);
-  else if (strcmp(line, "MANUAL") == 0) { controller_.emergencyStop("STOP"); emitAck("MANUAL"); }
+  else if (strcmp(line, "MANUAL") == 0) {
+    cancelButtonGestures();
+    readyQueued_ = false;
+    controller_.emergencyStop("STOP"); emitAck("MANUAL");
+  }
+  if (strcmp(line, "GET,FIELD") == 0) {
+    emitFieldStatus();
+    return;
+  }
+  if (strcmp(line, "FIELD,RED") == 0 || strcmp(line, "FIELD,BLUE") == 0) {
+    const MechanismField requested = strcmp(line, "FIELD,BLUE") == 0
+        ? MechanismField::Blue : MechanismField::Red;
+    if (!controller_.setCompetitionField(requested)) {
+      emitError("BUSY", "FIELD_CHANGE");
+      return;
+    }
+    emitFieldStatus();
+    emitStatus();
+    return;
+  }
   else if (strncmp(line, "VALVE,", 6) == 0) {
     unsigned index = 0, enabled = 0;
     if (sscanf(line + 6, "%u,%u", &index, &enabled) != 2 || index < 1 ||
@@ -476,27 +625,44 @@ void UartProtocol::emitStatus() {
 void UartProtocol::update() {
   // Check timeout before processing a late refresh: it may not restart motion.
   controller_.update();
+  // Read local inputs first so an UART STOP received in this iteration wins.
+  updateLocalButtons();
   readStream(robot_, robotReceiver_);
   readStream(usb_, usbReceiver_);
   updateE18();
   controller_.update();
   char eventText[32];
   if (controller_.takeFaultEvent(eventText, sizeof(eventText))) {
+    cancelButtonGestures();
     if (strstr(eventText, "PCF8574") != nullptr)
       emit("ERROR_PCF8574");
     emitError("MECHANISM_FAULT", eventText);
   }
   char valveLog[80];
   if (controller_.takeValveLogEvent(valveLog, sizeof(valveLog))) emit(valveLog);
-  // Release the chassis as soon as POINT_B has finished the valve pulse and
-  // both axes have started retracting. The mechanism continues back through
-  // HOME_A and to its bridge-clearance position in the background.
-  if (!pointBComplete_ && controller_.competitionActionRunning() &&
-      strcmp(controller_.activeProfileName(), "PICK_B") == 0 &&
-      controller_.activeStep() >= POINT_B_RETRACT_ACTIVE_STEP) {
-    pointBComplete_ = true;
-    emit("DONE_POINT_B");
-    emitStatus();
+  // Hold the chassis while A/B return together to READY_HOME_A. Release it
+  // when A starts its 1700 mm lift and B starts its first 850 mm stage, so
+  // Teensy bridge travel and mechanism motion run concurrently.
+  const bool pointBOrCActive =
+      strcmp(controller_.activeProfileName(), "PICK_B") == 0 ||
+      strcmp(controller_.activeProfileName(), "PICK_C") == 0;
+  if (controller_.competitionActionRunning() && pointBOrCActive &&
+      controller_.activeStep() >= POINT_B_FINAL_LIFT_ACTIVE_STEP) {
+    bool releasedNow = false;
+    if (strcmp(controller_.activeProfileName(), "PICK_C") == 0 &&
+        !pointCComplete_) {
+      pointCComplete_ = true;
+      emit("DONE_POINT_C");
+      releasedNow = true;
+    } else if (strcmp(controller_.activeProfileName(), "PICK_B") == 0 &&
+               !pointBComplete_) {
+      pointBComplete_ = true;
+      emit("DONE_POINT_B");
+      releasedNow = true;
+    }
+    // Chi phat trang thai dung mot lan luc nha Teensy. Neu phat o moi vong
+    // lap trong buoc nang cuoi, UART se bi ngap du lieu va giao dien bi lag.
+    if (releasedNow) emitStatus();
   }
   // THA_2B pneumatic work is complete at step 2. Release Teensy now so the
   // robot can travel while ESP32 homes the mechanism in the background.
@@ -510,16 +676,23 @@ void UartProtocol::update() {
   if (controller_.takeDoneEvent(eventText, sizeof(eventText))) {
     const bool pointBAlreadyReleased =
         strcmp(eventText, "PICK_B") == 0 && pointBComplete_;
+    const bool pointCAlreadyReleased =
+        strcmp(eventText, "PICK_C") == 0 && pointCComplete_;
     const bool drop2BAlreadyReleased =
         strcmp(eventText, "THA2B") == 0 && drop2BComplete_;
     if (strcmp(eventText, "PICK_A") == 0) pointAComplete_ = true;
     else if (strcmp(eventText, "PICK_B") == 0) pointBComplete_ = true;
+    else if (strcmp(eventText, "PICK_C") == 0) pointCComplete_ = true;
+    else if (strcmp(eventText, "BRIDGE_B") == 0) bridgeBComplete_ = true;
     else if (strcmp(eventText, "THA2A") == 0) drop2AComplete_ = true;
     else if (strcmp(eventText, "THA2B") == 0) drop2BComplete_ = true;
 
     if (strcmp(eventText, "PICK_A") == 0) emit("DONE_POINT_A");
     else if (strcmp(eventText, "PICK_B") == 0 && !pointBAlreadyReleased)
       emit("DONE_POINT_B");
+    else if (strcmp(eventText, "PICK_C") == 0 && !pointCAlreadyReleased)
+      emit("DONE_POINT_C");
+    else if (strcmp(eventText, "BRIDGE_B") == 0) emit("DONE_BRIDGE_B");
     else if (strcmp(eventText, "THA2A") == 0) emit("DONE_THA_2A");
     else if (strcmp(eventText, "THA2B") == 0 && !drop2BAlreadyReleased)
       emit("DONE_THA_2B");

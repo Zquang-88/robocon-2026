@@ -1,7 +1,5 @@
 #pragma once
-
 #include <Arduino.h>
-
 struct MechanismTelemetrySnapshot {
   char state[20] = "OFFLINE";
   char activeProfile[16] = "NONE";

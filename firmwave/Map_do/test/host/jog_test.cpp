@@ -6,6 +6,7 @@
 #include <string>
 #include "UartProtocol.h"
 #include "Wire.h"
+#include "HardwareConfig.h"
 
 uint64_t mockMicros = 0;
 bool PersistentConfig::save(MechanismConfig &, char *, size_t) { return false; }
@@ -27,11 +28,21 @@ struct Rig {
   TestStream usb, robot;
   MechanismController mechanism{a, b, valves};
   UartProtocol protocol{usb, robot, mechanism, config, storage};
-  Rig() { resetMockDigitalPins(); Wire.reset(); loadDefaultMechanismConfig(config); mechanism.begin(config); protocol.begin(); advance(30); }
+  Rig(bool valveHeldAtBoot = false, bool homeHeldAtBoot = false) {
+    resetMockDigitalPins();
+    setMockDigitalPin(HardwareConfig::VALVE_BUTTON_PIN, valveHeldAtBoot ? LOW : HIGH);
+    setMockDigitalPin(HardwareConfig::HOME_BUTTON_PIN, homeHeldAtBoot ? LOW : HIGH);
+    Wire.reset(); loadDefaultMechanismConfig(config); mechanism.begin(config);
+    protocol.begin(); advance(30);
+  }
   void command(const std::string &line) { robot.feed(line + "\n"); protocol.update(); }
   void advance(uint32_t ms) {
     const auto until = mockMicros + uint64_t(ms) * 1000;
     while (mockMicros < until) { mockMicros += 100; protocol.update(); }
+  }
+  void tap(uint8_t pin) {
+    setMockDigitalPin(pin, LOW); advance(40);
+    setMockDigitalPin(pin, HIGH); advance(40);
   }
 };
 
@@ -113,16 +124,70 @@ int main() {
   {
     Rig r;
     r.command("POINT_B");
+    for (int i = 0; i < 20000 && r.mechanism.activeStep() < 2; ++i)
+      r.advance(1);
+    assert(r.mechanism.activeStep() == 2);
+    assert(std::fabs(r.mechanism.positionAmm() -
+                     (HardwareConfig::READY_HOME_A_POSITION_A_MM +
+                      HardwareConfig::PICK_LOWER_DIRECTION_A *
+                          HardwareConfig::RED_POINT_B_LOWER_DISTANCE_A_MM)) < 0.1f);
+    assert(std::fabs(r.mechanism.positionBmm() -
+                     (HardwareConfig::READY_HOME_A_POSITION_B_MM +
+                      HardwareConfig::PICK_LOWER_DIRECTION_B *
+                          HardwareConfig::RED_POINT_B_LOWER_DISTANCE_B_MM)) < 0.1f);
     for (int i = 0; i < 40000 &&
                     r.robot.output.find("DONE_POINT_B") == std::string::npos;
          ++i) r.advance(1);
     assert(r.robot.output.find("DONE_POINT_B") != std::string::npos);
     assert(r.mechanism.busy());
     assert(strcmp(r.mechanism.activeProfileName(), "PICK_B") == 0);
+    assert(r.mechanism.activeStep() == 6);
+    assert(std::fabs(r.mechanism.positionAmm() -
+                     HardwareConfig::READY_HOME_A_POSITION_A_MM) < 5.0f);
+    assert(std::fabs(r.mechanism.positionBmm() -
+                     HardwareConfig::READY_HOME_A_POSITION_B_MM) < 5.0f);
+    const long aWhenDone = r.a.currentPosition();
+    const long bWhenDone = r.b.currentPosition();
+    r.advance(150);
+    assert(r.a.currentPosition() > aWhenDone);
+    assert(r.b.currentPosition() < bWhenDone);
+    for (int i = 0; i < 20000 && r.mechanism.activeStep() < 8; ++i)
+      r.advance(1);
+    assert(r.mechanism.activeStep() == 8);
+    const long aDuringSecondHalf = r.a.currentPosition();
+    const long bHoldingAtOneThird = r.b.currentPosition();
+    r.advance(150);
+    assert(r.a.currentPosition() > aDuringSecondHalf);
+    assert(r.b.currentPosition() == bHoldingAtOneThird);
     r.advance(20000);
     assert(!r.mechanism.busy());
+    assert(std::fabs(r.mechanism.positionAmm() -
+                     (HardwareConfig::READY_HOME_A_POSITION_A_MM +
+                      HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_A *
+                          HardwareConfig::POINT_B_FINAL_RAISE_DISTANCE_MM)) < 0.1f);
+    assert(std::fabs(r.mechanism.positionBmm() -
+                     (HardwareConfig::READY_HOME_A_POSITION_B_MM +
+                      HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_B *
+                          HardwareConfig::POINT_B_FIRST_STAGE_B_DISTANCE_MM)) < 0.1f);
     assert(r.robot.output.find("DONE,PICK_B") == std::string::npos);
-    puts("PASS: POINT_B releases chassis while mechanism retracts in background");
+    r.command("BRIDGE_STABLE");
+    assert(r.robot.output.find("ACK,STARTED,BRIDGE_B") != std::string::npos);
+    for (int i = 0; i < 20000 &&
+                    r.robot.output.find("DONE_BRIDGE_B") == std::string::npos;
+         ++i) r.advance(1);
+    assert(r.robot.output.find("DONE_BRIDGE_B") != std::string::npos);
+    assert(!r.mechanism.busy());
+    assert(std::fabs(r.mechanism.positionAmm() -
+                     (HardwareConfig::READY_HOME_A_POSITION_A_MM +
+                      HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_A *
+                          HardwareConfig::POINT_B_FINAL_RAISE_DISTANCE_MM)) < 0.1f);
+    assert(std::fabs(r.mechanism.positionBmm() -
+                     (HardwareConfig::READY_HOME_A_POSITION_B_MM +
+                      HardwareConfig::POINT_B_FINAL_RAISE_DIRECTION_B *
+                          HardwareConfig::POINT_B_FINAL_RAISE_DISTANCE_MM)) < 0.1f);
+    r.command("BRIDGE_STABLE");
+    assert(r.robot.output.rfind("DONE_BRIDGE_B") != std::string::npos);
+    puts("PASS: POINT_B raises A=1700/B=566.7, then BRIDGE_STABLE finishes B=1700");
   }
   {
     Rig r;
@@ -159,10 +224,17 @@ int main() {
     for (int i = 0; i < 50000 &&
                     r.robot.output.find("DONE_POINT_A") == std::string::npos;
          ++i) r.advance(1);
-    assert(r.robot.output.find("[POINT_A] P2 ON, P5 OFF") != std::string::npos);
-    assert(r.robot.output.find("[POINT_A] P3 ON, P4 OFF") != std::string::npos);
+    assert(r.robot.output.find("[POINT_A] P2 + P3 ON TOGETHER") != std::string::npos);
+    bool sawPointABothOn = false;
+    for (uint8_t state : Wire.writes) {
+      const bool p2On = (state & (1U << 2)) == 0;
+      const bool p3On = (state & (1U << 3)) == 0;
+      assert(p2On == p3On);
+      if (p2On && p3On) sawPointABothOn = true;
+    }
+    assert(sawPointABothOn);
     assert(r.robot.output.find("DONE_POINT_A") != std::string::npos);
-    assert(Wire.lastWritten == 0xF3);
+    assert(Wire.lastWritten == 0xF3);  // RED POINT_A: P2/P3 LOW
     r.command("STOP");
     assert(Wire.lastWritten == 0xFF);
     assert(r.robot.output.find("STOPPED") != std::string::npos);
@@ -196,7 +268,25 @@ int main() {
     assert(r.robot.output.find("[THA_2B] P2 OFF, P5 ON") != std::string::npos);
     assert(r.robot.output.find("[THA_2B] Wait 350 ms") != std::string::npos);
     assert(r.robot.output.find("[THA_2B] P0 OFF, P7 ON") != std::string::npos);
-    puts("PASS: THA_2B P2 OFF then P0 OFF with a verified 350 ms interval");
+    puts("PASS: RED THA_2B P2 OFF then P0 OFF with a verified 350 ms interval");
+  }
+  {
+    Rig r;
+    r.command("FIELD,BLUE");
+    r.robot.output.clear();
+    r.command("THA_2B");
+    r.advance(50);
+    assert(Wire.lastWritten == 0x7F);  // BLUE: P0 OFF selects opposite P7 ON
+    r.advance(349);
+    assert(Wire.lastWritten == 0x7F);  // P5 must still be OFF
+    r.advance(1);
+    assert(Wire.lastWritten == 0x7F);  // P2/P5 transition starts after 350 ms
+    r.advance(50);
+    assert(Wire.lastWritten == 0x5F);  // P7 and P5 ON
+    assert(r.robot.output.find("[THA_2B] P0 OFF, P7 ON") != std::string::npos);
+    assert(r.robot.output.find("[THA_2B] Wait 350 ms") != std::string::npos);
+    assert(r.robot.output.find("[THA_2B] P2 OFF, P5 ON") != std::string::npos);
+    puts("PASS: BLUE THA_2B P0 OFF then P2 OFF with a verified 350 ms interval");
   }
   {
     Rig r;
@@ -204,10 +294,65 @@ int main() {
     for (int i = 0; i < 50000 &&
                     r.robot.output.find("DONE_POINT_B") == std::string::npos;
          ++i) r.advance(1);
-    assert(Wire.lastWritten == 0xFC);  // P0/P1 LOW; all others HIGH
-    assert(r.robot.output.find("[POINT_B] P0 ON, P7 OFF") != std::string::npos);
-    assert(r.robot.output.find("[POINT_B] P1 ON, P6 OFF") != std::string::npos);
-    puts("PASS: POINT_B exact pair order, bits and response");
+    assert(Wire.lastWritten == 0xFC);  // RED POINT_B: P0/P1 LOW
+    assert(r.robot.output.find("[POINT_B] P0 + P1 ON TOGETHER") != std::string::npos);
+    bool sawPointBBothOn = false;
+    for (uint8_t state : Wire.writes) {
+      const bool p0On = (state & (1U << 0)) == 0;
+      const bool p1On = (state & (1U << 1)) == 0;
+      assert(p0On == p1On);
+      if (p0On && p1On) sawPointBBothOn = true;
+    }
+    assert(sawPointBBothOn);
+    puts("PASS: RED POINT_B switches P0/P1 together and responds");
+  }
+  {
+    Rig r;
+    r.command("POINT_C");
+    for (int i = 0; i < 50000 &&
+                    r.robot.output.find("DONE_POINT_C") == std::string::npos;
+         ++i) r.advance(1);
+    const size_t firstDone = r.robot.output.find("DONE_POINT_C");
+    assert(firstDone != std::string::npos);
+    assert(strcmp(r.mechanism.activeProfileName(), "PICK_C") == 0);
+    assert(Wire.lastWritten == 0xFC);  // RED POINT_C reuses POINT_B valve pair.
+    assert(r.robot.output.find("[POINT_C] P0 + P1 ON TOGETHER") != std::string::npos);
+    r.advance(500);
+    assert(r.robot.output.find("DONE_POINT_C", firstDone + 1) == std::string::npos);
+    while (r.mechanism.busy()) r.advance(1);
+    r.command("BRIDGE_STABLE");
+    assert(r.robot.output.find("ACK,STARTED,BRIDGE_B") != std::string::npos);
+    puts("PASS: POINT_C mirrors POINT_B, responds once and enables BRIDGE_STABLE");
+  }
+  {
+    Rig r;
+    assert(r.robot.output.find("ACK,FIELD,RED") != std::string::npos);
+    assert(mockDigitalPinState[HardwareConfig::RGB_RED_PIN] == HIGH);
+    assert(mockDigitalPinState[HardwareConfig::RGB_GREEN_PIN] == LOW);
+    assert(mockDigitalPinState[HardwareConfig::RGB_BLUE_PIN] == LOW);
+    r.command("FIELD,BLUE");
+    assert(r.robot.output.find("ACK,FIELD,BLUE") != std::string::npos);
+    assert(mockDigitalPinState[HardwareConfig::RGB_RED_PIN] == LOW);
+    assert(mockDigitalPinState[HardwareConfig::RGB_GREEN_PIN] == LOW);
+    assert(mockDigitalPinState[HardwareConfig::RGB_BLUE_PIN] == HIGH);
+    r.command("POINT_A");
+    for (int i = 0; i < 50000 &&
+                    r.robot.output.find("DONE_POINT_A") == std::string::npos;
+         ++i) r.advance(1);
+    assert(Wire.lastWritten == 0xFC);  // BLUE POINT_A: P0/P1 LOW
+    assert(r.robot.output.find("[POINT_A] P0 + P1 ON TOGETHER") != std::string::npos);
+    puts("PASS: FIELD BLUE ACK, blue LED and mirrored POINT_A valves");
+  }
+  {
+    Rig r;
+    r.command("FIELD,BLUE");
+    r.command("POINT_B");
+    for (int i = 0; i < 50000 &&
+                    r.robot.output.find("DONE_POINT_B") == std::string::npos;
+         ++i) r.advance(1);
+    assert(Wire.lastWritten == 0xF3);  // BLUE POINT_B: P2/P3 LOW
+    assert(r.robot.output.find("[POINT_B] P2 + P3 ON TOGETHER") != std::string::npos);
+    puts("PASS: BLUE POINT_B switches mirrored P2/P3 pair");
   }
   {
     Rig r;
@@ -223,7 +368,7 @@ int main() {
     for (int i = 0; i < 50000 &&
                     r.robot.output.find("DONE_POINT_A") == std::string::npos;
          ++i) r.advance(1);
-    assert(Wire.lastWritten == 0xF3);  // P2/P3 retained ON
+    assert(Wire.lastWritten == 0xF3);  // RED POINT_A keeps P2/P3 ON
     r.command("POINT_B");
     for (int i = 0; i < 50000 &&
                     r.robot.output.find("DONE_POINT_B") == std::string::npos;
@@ -281,6 +426,128 @@ int main() {
     assert(!r.mechanism.busy() && r.mechanism.zeroed());
     assert(r.a.currentPosition() == 0 && r.b.currentPosition() == 0);
     puts("PASS: THA_2B lowers B 400 mm, lowers A/B to HOME37, then homes A to HOME36");
+  }
+  {
+    Rig r;
+    // Nothing arrives on either Serial port: both buttons work offline.
+    r.tap(11); r.advance(60); r.tap(11); r.advance(60);
+    assert(Wire.lastWritten == 0xF0);  // work coils P0-P3 all on
+    for (uint8_t state : Wire.writes) {
+      assert((state & 0x81) && (state & 0x42));
+      assert((state & 0x24) && (state & 0x18));
+    }
+    r.tap(11);
+    r.advance(20);  // allow the 50 ms break-before-make interval to finish
+    assert(Wire.lastWritten == 0x0F);  // P4-P7 ON: all valves closed
+    assert(r.robot.output.find("ACK,BUTTON11,P4_P7_ON_CLOSED") != std::string::npos);
+    r.advance(1000); assert(Wire.lastWritten == 0x0F);
+    puts("PASS: GPIO11 double press opens P0-P3; single press closes with P4-P7 offline");
+  }
+  {
+    Rig r(true, true);
+    r.advance(1200);
+    assert(!r.mechanism.busy() && Wire.lastWritten == 0xFF);
+    assert(r.robot.output.find("ACK,BUTTON11,") == std::string::npos);
+    assert(r.robot.output.find("ACK,BUTTON12,") == std::string::npos);
+    setMockDigitalPin(11, HIGH); setMockDigitalPin(12, HIGH); r.advance(40);
+    for (int i = 0; i < 5; ++i) {
+      setMockDigitalPin(11, LOW); setMockDigitalPin(12, LOW); r.advance(5);
+      setMockDigitalPin(11, HIGH); setMockDigitalPin(12, HIGH); r.advance(5);
+    }
+    r.advance(600);
+    assert(r.robot.output.find("ACK,BUTTON11,") == std::string::npos);
+    assert(r.robot.output.find("ACK,BUTTON12,") == std::string::npos);
+    puts("PASS: held-at-boot and bouncing buttons cannot start work");
+  }
+  {
+    Rig r;
+    setMockDigitalPin(36, HIGH); setMockDigitalPin(37, HIGH);
+    r.tap(12); r.advance(150);
+    assert(r.mechanism.homing() && !r.mechanism.zeroed());
+    assert(r.a.currentPosition() == 0 && r.b.currentPosition() > 0);
+    assert(r.a.maxSpeed() == 8000.0f && r.b.maxSpeed() == 8000.0f);
+    assert(r.a.acceleration() == 5500.0f && r.b.acceleration() == 5500.0f);
+    const long bAtSwitch = r.b.currentPosition();
+    setMockDigitalPin(37, LOW); r.advance(10);
+    assert(r.b.currentPosition() == bAtSwitch && r.a.currentPosition() == 0);
+    // A short HOME37 bounce must not release A.
+    setMockDigitalPin(37, HIGH); r.advance(5);
+    assert(r.a.currentPosition() == 0);
+    setMockDigitalPin(37, LOW); r.advance(30);
+    assert(r.b.currentPosition() == 0);
+    r.advance(150);
+    assert(r.a.currentPosition() > 0 && r.b.currentPosition() == 0);
+    setMockDigitalPin(36, LOW); r.advance(30);
+    assert(!r.mechanism.busy() && r.mechanism.zeroed());
+    assert(r.a.currentPosition() == 0 && r.b.currentPosition() == 0);
+    assert(r.robot.output.find("ACK,BUTTON12,HOME_B_THEN_A,8000,5500") != std::string::npos);
+    puts("PASS: GPIO12 homes B first, confirms HOME37, then homes A at 8000/5500 offline");
+  }
+  {
+    Rig r;
+    // B is already on HOME: never move B, but finish homing A.
+    setMockDigitalPin(36, HIGH); setMockDigitalPin(37, LOW);
+    r.tap(12); r.advance(150);
+    assert(r.b.currentPosition() == 0 && r.a.currentPosition() > 0);
+    r.command("STOP");
+    const long stoppedA = r.a.currentPosition();
+    r.advance(500);
+    assert(!r.mechanism.busy() && r.a.currentPosition() == stoppedA);
+    assert(!r.mechanism.zeroed());
+    puts("PASS: already-HOME B stays still; UART STOP cancels button homing");
+  }
+  {
+    Rig r;
+    setMockDigitalPin(36, HIGH); setMockDigitalPin(37, HIGH);
+    r.tap(12); r.advance(HardwareConfig::BUTTON_HOME_TIMEOUT_MS);
+    assert(r.mechanism.fault() == MechanismFault::HomeTimeout);
+    assert(r.a.currentPosition() == 0 && !r.mechanism.busy());
+    const long stoppedB = r.b.currentPosition();
+    r.tap(12); r.advance(100);
+    assert(!r.mechanism.busy() && r.b.currentPosition() == stoppedB);
+    puts("PASS: missing HOME37 times out; button cannot bypass a fault");
+  }
+  {
+    Rig r;
+    r.command("POINT_A");
+    r.tap(12);
+    assert(r.mechanism.competitionActionRunning());
+    assert(r.robot.output.find("ERR,BUTTON12_HOME_REJECTED,BUSY") != std::string::npos);
+    r.tap(11); r.tap(11); r.advance(60);
+    assert(r.robot.output.find("ERR,BUTTON11_ON_REJECTED,BUSY") != std::string::npos);
+    r.tap(11);
+    const long stoppedA = r.a.currentPosition(), stoppedB = r.b.currentPosition();
+    r.advance(2000);
+    assert(!r.mechanism.busy() && Wire.lastWritten == 0x0F);
+    assert(r.a.currentPosition() == stoppedA && r.b.currentPosition() == stoppedB);
+    assert(r.robot.output.find("DONE_POINT_A") == std::string::npos);
+    puts("PASS: HOME/OPEN cannot overlap AUTO; single CLOSE cancels work without false DONE");
+  }
+  {
+    Rig r;
+    r.tap(11); r.command("STOP"); r.advance(500);
+    assert(r.robot.output.find("ACK,BUTTON11,P4_P7_ON_CLOSED") != std::string::npos);
+    assert(r.robot.output.find("ACK,BUTTON11,P0_P3_ON_REQUESTED") == std::string::npos);
+    assert(Wire.lastWritten == 0xFF);
+    r.tap(11);
+    setMockDigitalPin(11, LOW); r.advance(29);
+    r.robot.feed("STOP\n"); r.advance(5); r.advance(500);
+    assert(Wire.lastWritten == 0xFF && !r.mechanism.busy());
+    puts("PASS: STOP cancels pending button gestures and prevents a held button from restarting");
+  }
+  {
+    Rig r;
+    setMockDigitalPin(17, HIGH); setMockDigitalPin(18, LOW);
+    r.command("E18,ARM");
+    r.tap(11); r.advance(60); r.tap(11); r.advance(60);
+    assert(r.robot.output.find("EVENT,E18_BOTH,1") == std::string::npos);
+    // BUTTON11 OFF intentionally disarms E18; arm it again before checking
+    // the dedicated GPIO17/GPIO18 inputs.
+    r.command("E18,ARM");
+    setMockDigitalPin(17, LOW); r.advance(40);
+    assert(r.robot.output.find("EVENT,E18_BOTH,1") != std::string::npos);
+    assert(r.robot.output.find("E18,STATUS,1,1,1") != std::string::npos);
+    puts("PASS: E18 uses GPIO17/18 and ignores the GPIO11 valve button");
   }
   puts("ALL JOG HOST TESTS PASSED (real AccelStepper, simulated clock and GPIO)");
 }

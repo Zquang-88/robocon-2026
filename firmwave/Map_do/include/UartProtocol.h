@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "MechanismController.h"
+#include "LocalButton.h"
 #include "PersistentConfig.h"
 
 class UartProtocol {
@@ -31,8 +32,15 @@ class UartProtocol {
   bool readyQueued_ = false;
   bool pointAComplete_ = false;
   bool pointBComplete_ = false;
+  bool pointCComplete_ = false;
+  bool bridgeBComplete_ = false;
   bool drop2AComplete_ = false;
   bool drop2BComplete_ = false;
+  LocalButton valveButton_;
+  LocalButton homeButton_;
+  bool valveClickPending_ = false;
+  bool valveDoubleClickCanEnable_ = false;
+  uint32_t valveFirstClickMs_ = 0;
 
   void readStream(Stream &stream, Receiver &receiver);
   void processLine(char *line);
@@ -45,7 +53,11 @@ class UartProtocol {
   void emitCapabilities();
   void emitE18Status();
   void emitHomeStatus();
+  void emitFieldStatus();
   void updateE18();
+  void updateLocalButtons();
+  void cancelButtonGestures();
+  void closeValvesFromButton();
   void processJog(const char *arguments);
   bool runNamedProfile(const char *name);
   bool startCompetitionCommand(const char *wireCommand,

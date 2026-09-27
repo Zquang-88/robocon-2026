@@ -1,0 +1,303 @@
+[
+  {
+    "direction": "LEFT",
+    "speed_rpm": 13,
+    "command": "RUN4_RPM -13 13 13 -13 5",
+    "summary": {
+      "FL": {
+        "target_rpm": -13.0,
+        "actual_mean_rpm": -13.009,
+        "actual_std_rpm": 2.019,
+        "mean_error_rpm": 0.009,
+        "mae_rpm": 1.696,
+        "mean_pwm": -30.73,
+        "samples": 15
+      },
+      "FR": {
+        "target_rpm": 13.0,
+        "actual_mean_rpm": 14.937,
+        "actual_std_rpm": 2.703,
+        "mean_error_rpm": -1.937,
+        "mae_rpm": 2.727,
+        "mean_pwm": 28.6,
+        "samples": 15
+      },
+      "BL": {
+        "target_rpm": 13.0,
+        "actual_mean_rpm": 11.761,
+        "actual_std_rpm": 2.537,
+        "mean_error_rpm": 1.239,
+        "mae_rpm": 2.542,
+        "mean_pwm": 29.0,
+        "samples": 15
+      },
+      "BR": {
+        "target_rpm": -13.0,
+        "actual_mean_rpm": -13.985,
+        "actual_std_rpm": 3.114,
+        "mean_error_rpm": 0.985,
+        "mae_rpm": 2.888,
+        "mean_pwm": -31.6,
+        "samples": 15
+      }
+    }
+  },
+  {
+    "direction": "LEFT",
+    "speed_rpm": 38,
+    "command": "RUN4_RPM -38 38 38 -38 5",
+    "summary": {
+      "FL": {
+        "target_rpm": -38.0,
+        "actual_mean_rpm": -37.707,
+        "actual_std_rpm": 2.66,
+        "mean_error_rpm": -0.293,
+        "mae_rpm": 2.131,
+        "mean_pwm": -36.33,
+        "samples": 15
+      },
+      "FR": {
+        "target_rpm": 38.0,
+        "actual_mean_rpm": 38.489,
+        "actual_std_rpm": 2.813,
+        "mean_error_rpm": -0.489,
+        "mae_rpm": 2.072,
+        "mean_pwm": 34.67,
+        "samples": 15
+      },
+      "BL": {
+        "target_rpm": 38.0,
+        "actual_mean_rpm": 38.986,
+        "actual_std_rpm": 2.064,
+        "mean_error_rpm": -0.986,
+        "mae_rpm": 1.341,
+        "mean_pwm": 32.67,
+        "samples": 15
+      },
+      "BR": {
+        "target_rpm": -38.0,
+        "actual_mean_rpm": -38.121,
+        "actual_std_rpm": 2.635,
+        "mean_error_rpm": 0.121,
+        "mae_rpm": 2.148,
+        "mean_pwm": -37.6,
+        "samples": 15
+      }
+    }
+  },
+  {
+    "direction": "LEFT",
+    "speed_rpm": 57,
+    "command": "RUN4_RPM -57 57 57 -57 5",
+    "summary": {
+      "FL": {
+        "target_rpm": -57.0,
+        "actual_mean_rpm": -55.396,
+        "actual_std_rpm": 3.109,
+        "mean_error_rpm": -1.604,
+        "mae_rpm": 3.239,
+        "mean_pwm": -41.47,
+        "samples": 15
+      },
+      "FR": {
+        "target_rpm": 57.0,
+        "actual_mean_rpm": 58.515,
+        "actual_std_rpm": 1.205,
+        "mean_error_rpm": -1.515,
+        "mae_rpm": 1.563,
+        "mean_pwm": 37.73,
+        "samples": 15
+      },
+      "BL": {
+        "target_rpm": 57.0,
+        "actual_mean_rpm": 57.709,
+        "actual_std_rpm": 1.952,
+        "mean_error_rpm": -0.709,
+        "mae_rpm": 1.783,
+        "mean_pwm": 37.0,
+        "samples": 15
+      },
+      "BR": {
+        "target_rpm": -57.0,
+        "actual_mean_rpm": -57.485,
+        "actual_std_rpm": 2.217,
+        "mean_error_rpm": 0.485,
+        "mae_rpm": 1.929,
+        "mean_pwm": -41.47,
+        "samples": 15
+      }
+    }
+  },
+  {
+    "direction": "LEFT",
+    "speed_rpm": 76,
+    "command": "RUN4_RPM -76 76 76 -76 5",
+    "summary": {
+      "FL": {
+        "target_rpm": -76.0,
+        "actual_mean_rpm": -76.445,
+        "actual_std_rpm": 2.31,
+        "mean_error_rpm": 0.445,
+        "mae_rpm": 2.027,
+        "mean_pwm": -44.0,
+        "samples": 15
+      },
+      "FR": {
+        "target_rpm": 76.0,
+        "actual_mean_rpm": 77.738,
+        "actual_std_rpm": 1.822,
+        "mean_error_rpm": -1.738,
+        "mae_rpm": 2.335,
+        "mean_pwm": 41.13,
+        "samples": 15
+      },
+      "BL": {
+        "target_rpm": 76.0,
+        "actual_mean_rpm": 76.331,
+        "actual_std_rpm": 2.863,
+        "mean_error_rpm": -0.331,
+        "mae_rpm": 2.583,
+        "mean_pwm": 41.27,
+        "samples": 15
+      },
+      "BR": {
+        "target_rpm": -76.0,
+        "actual_mean_rpm": -77.331,
+        "actual_std_rpm": 1.793,
+        "mean_error_rpm": 1.331,
+        "mae_rpm": 1.987,
+        "mean_pwm": -44.53,
+        "samples": 15
+      }
+    }
+  },
+  {
+    "direction": "LEFT",
+    "speed_rpm": 95,
+    "command": "RUN4_RPM -95 95 95 -95 5",
+    "summary": {
+      "FL": {
+        "target_rpm": -95.0,
+        "actual_mean_rpm": -95.828,
+        "actual_std_rpm": 2.297,
+        "mean_error_rpm": 0.828,
+        "mae_rpm": 2.181,
+        "mean_pwm": -47.4,
+        "samples": 15
+      },
+      "FR": {
+        "target_rpm": 95.0,
+        "actual_mean_rpm": 96.281,
+        "actual_std_rpm": 1.933,
+        "mean_error_rpm": -1.281,
+        "mae_rpm": 2.072,
+        "mean_pwm": 45.07,
+        "samples": 15
+      },
+      "BL": {
+        "target_rpm": 95.0,
+        "actual_mean_rpm": 94.996,
+        "actual_std_rpm": 2.554,
+        "mean_error_rpm": 0.004,
+        "mae_rpm": 2.223,
+        "mean_pwm": 45.4,
+        "samples": 15
+      },
+      "BR": {
+        "target_rpm": -95.0,
+        "actual_mean_rpm": -95.057,
+        "actual_std_rpm": 3.782,
+        "mean_error_rpm": 0.057,
+        "mae_rpm": 3.115,
+        "mean_pwm": -49.53,
+        "samples": 15
+      }
+    }
+  },
+  {
+    "direction": "LEFT",
+    "speed_rpm": 191,
+    "command": "RUN4_RPM -191 191 191 -191 5",
+    "summary": {
+      "FL": {
+        "target_rpm": -191.0,
+        "actual_mean_rpm": -191.867,
+        "actual_std_rpm": 2.52,
+        "mean_error_rpm": 0.867,
+        "mae_rpm": 2.468,
+        "mean_pwm": -68.27,
+        "samples": 15
+      },
+      "FR": {
+        "target_rpm": 191.0,
+        "actual_mean_rpm": 191.371,
+        "actual_std_rpm": 1.929,
+        "mean_error_rpm": -0.371,
+        "mae_rpm": 1.748,
+        "mean_pwm": 65.07,
+        "samples": 15
+      },
+      "BL": {
+        "target_rpm": 191.0,
+        "actual_mean_rpm": 191.554,
+        "actual_std_rpm": 2.24,
+        "mean_error_rpm": -0.554,
+        "mae_rpm": 2.125,
+        "mean_pwm": 67.47,
+        "samples": 15
+      },
+      "BR": {
+        "target_rpm": -191.0,
+        "actual_mean_rpm": -191.047,
+        "actual_std_rpm": 2.554,
+        "mean_error_rpm": 0.047,
+        "mae_rpm": 2.317,
+        "mean_pwm": -69.47,
+        "samples": 15
+      }
+    }
+  },
+  {
+    "direction": "LEFT",
+    "speed_rpm": 220,
+    "command": "RUN4_RPM -220 220 220 -220 5",
+    "summary": {
+      "FL": {
+        "target_rpm": -220.0,
+        "actual_mean_rpm": -220.852,
+        "actual_std_rpm": 1.627,
+        "mean_error_rpm": 0.852,
+        "mae_rpm": 1.184,
+        "mean_pwm": -75.0,
+        "samples": 15
+      },
+      "FR": {
+        "target_rpm": 220.0,
+        "actual_mean_rpm": 221.603,
+        "actual_std_rpm": 3.27,
+        "mean_error_rpm": -1.603,
+        "mae_rpm": 2.514,
+        "mean_pwm": 70.8,
+        "samples": 15
+      },
+      "BL": {
+        "target_rpm": 220.0,
+        "actual_mean_rpm": 220.704,
+        "actual_std_rpm": 1.804,
+        "mean_error_rpm": -0.704,
+        "mae_rpm": 1.533,
+        "mean_pwm": 74.6,
+        "samples": 15
+      },
+      "BR": {
+        "target_rpm": -220.0,
+        "actual_mean_rpm": -221.239,
+        "actual_std_rpm": 2.42,
+        "mean_error_rpm": 1.239,
+        "mae_rpm": 2.145,
+        "mean_pwm": -75.13,
+        "samples": 15
+      }
+    }
+  }
+]

@@ -9,12 +9,25 @@
 #include <stdio.h>
 #include <string.h>
 #include "RobotConfig.h"
+#include "BackupRouteConfig.h"
 #include "Esp32MechanismClient.h"
 #include "MechanismTelemetryView.h"
 using namespace RobotConfig;
 
 #ifndef ROBOCON_AFTER_BRIDGE_TEST_BUILD
 #define ROBOCON_AFTER_BRIDGE_TEST_BUILD 0
+#endif
+#ifndef ROBOCON_AFTER_BRIDGE_TEST_STOP_AFTER_SIDE_CLEAR
+#define ROBOCON_AFTER_BRIDGE_TEST_STOP_AFTER_SIDE_CLEAR 0
+#endif
+#ifndef ROBOCON_AFTER_BRIDGE_TEST_CHASSIS_ONLY
+#define ROBOCON_AFTER_BRIDGE_TEST_CHASSIS_ONLY 0
+#endif
+#ifndef ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+#define ROBOCON_BRIDGE_LINE_1150_TEST_BUILD 0
+#endif
+#ifndef ROBOCON_BRIDGE_LINE_TEST_SPEED_MM_S
+#define ROBOCON_BRIDGE_LINE_TEST_SPEED_MM_S 1150.0f
 #endif
 
 // Keep a direct USB Serial command path for supervised tests. These functions
@@ -23,8 +36,10 @@ using namespace RobotConfig;
 static Stream &usbCommandStream() { return Serial; }
 static void beginUsbCommandStream() { Serial.begin(115200); }
 
-// Route RBT/1 replies and telemetry prints to Serial5. USB Serial (COM14) is a
-// receive-only backup command path for supervised service tests.
+// Route normal RBT/1 replies and telemetry prints to Serial5. USB Serial
+// (COM14) is normally receive-only, except the persistent backup-route
+// configuration commands which deliberately reply on the port that requested
+// them so the setup UI can save EEPROM and then be unplugged.
 #define Serial TELEMETRY_UART
 
 // ============================================================
@@ -67,6 +82,11 @@ enum AutoState : uint8_t {
   CAN_YAW_B,
   CAN_B,
   DOI_GAP_B,
+  BACKUP_C_TRAVEL,
+  BACKUP_C_ALIGN,
+  BACKUP_C_VERIFY,
+  BACKUP_C_WAIT_MECHANISM,
+  BACKUP_C_EXIT_TO_BRIDGE,
   DI_SANG_C,
   BU_TAM_C,
   CAN_YAW_C,
@@ -180,8 +200,10 @@ struct WheelControl {
   float targetMmS = 0;
   float measuredMmS = 0;
   int pwm = 0;
-  float kff = 0;
-  int deadzone = 0;
+  float kffPositive = 0;
+  float kffNegative = 0;
+  int deadzonePositive = 0;
+  int deadzoneNegative = 0;
   PID pid;
   uint32_t lastEncoderMotionMs = 0;
 };
@@ -241,12 +263,41 @@ AutoMechanismMode autoMechanismMode = AUTO_MECHANISM_REAL;
 // ON_REQUEST mode the dashboard may request one compact, staged snapshot.
 // SILENT rejects snapshots, while safety/state/fault records remain enabled.
 AutoTelemetryMode autoTelemetryMode = AUTO_TELEMETRY_ON_REQUEST;
+BackupRoute::Config backupRouteConfig = BackupRoute::defaults();
+bool backupRouteConfigLoadedFromEeprom = false;
+bool backupRouteConfigDirty = false;
+bool processingUsbCommand = false;
 uint8_t autoTelemetrySnapshotStage = 0;
 uint32_t autoTelemetrySnapshotSequence = 0;
 
 int8_t selectedFieldLateralSign() {
   return selectedField == FIELD_RED ? RED_FIELD_LATERAL_SIGN
                                     : BLUE_FIELD_LATERAL_SIGN;
+}
+
+float selectedStartEncoderDistanceMm() {
+  if (BackupRoute::backupEnabled(backupRouteConfig))
+    return selectedField == FIELD_BLUE
+        ? backupRouteConfig.blue.startForwardMm
+        : backupRouteConfig.red.startForwardMm;
+  return selectedField == FIELD_BLUE ? BLUE_START_ENCODER_DISTANCE_MM
+                                     : RED_START_ENCODER_DISTANCE_MM;
+}
+
+float selectedPostBForwardDistanceMm() {
+  return selectedField == FIELD_BLUE ? BLUE_POST_B_FORWARD_DISTANCE_MM
+                                     : RED_POST_B_FORWARD_DISTANCE_MM;
+}
+
+float selectedPostBLateralDistanceMm() {
+  return selectedField == FIELD_BLUE ? BLUE_POST_B_LATERAL_DISTANCE_MM
+                                     : RED_POST_B_LATERAL_DISTANCE_MM;
+}
+
+float selectedPostBridgeForwardDistanceMm() {
+  return selectedField == FIELD_BLUE
+             ? BLUE_POST_BRIDGE_E18_FORWARD_DISTANCE_MM
+             : POST_BRIDGE_E18_FORWARD_DISTANCE_MM;
 }
 
 bool selectedFieldUsesRightStopGroup() {
@@ -259,6 +310,30 @@ bool secondPickUsesRightStopGroup() {
   // Point B is reached by the opposite side of the chassis.  Do not keep
   // counting with the point-A array or RED will stop on line 3 at the right.
   return !selectedFieldUsesRightStopGroup();
+}
+
+BackupRoute::MapProfile &selectedBackupCProfile() {
+  return selectedField == FIELD_BLUE ? backupRouteConfig.blue
+                                     : backupRouteConfig.red;
+}
+
+const BackupRoute::MapProfile &selectedBackupCProfileConst() {
+  return selectedField == FIELD_BLUE ? backupRouteConfig.blue
+                                     : backupRouteConfig.red;
+}
+
+bool backupCRouteEnabled() {
+  return BackupRoute::backupEnabled(backupRouteConfig);
+}
+
+bool backupCUsesRightStopGroup() {
+  return selectedBackupCProfileConst().useRightGroup != 0;
+}
+
+bool tha2BUsesRightStopGroup() {
+  // The final 2B vertical line is approached by the RED right side. BLUE is
+  // the exact field mirror, so its left outside+middle pair becomes primary.
+  return selectedFieldUsesRightStopGroup();
 }
 
 bool softwareEStopLatched = false;
@@ -277,7 +352,18 @@ bool calibrationStopOnly = false;
 bool espDone = false;
 bool espDoneTha2A = false;
 bool espDoneTha2B = false;
+bool bridgeBResumeRequested = false;
+bool bridgeBResumeAccepted = false;
+bool bridgeBResumeDone = false;
+uint8_t bridgeBResumeAttempts = 0;
+uint32_t bridgeBResumeStartedMs = 0;
+uint32_t lastBridgeBResumeSendMs = 0;
 bool espE18BothDetected = false;
+bool espFieldSynced = false;
+FieldSide espConfirmedField = FIELD_RED;
+uint32_t lastEspFieldSyncSendMs = 0;
+uint16_t espFieldSyncAttempts = 0;
+bool physicalStartPendingForFieldSync = false;
 bool autoMechanismWaiting = false;
 uint32_t autoMechanismStartedMs = 0;
 char autoMechanismAction[24] = "NONE";
@@ -294,10 +380,28 @@ float lateralHoldTofMm = 0.0f;
 bool lateralHoldTofCaptured = false;
 float lateralHeadingCommandWz = 0.0f;
 float stationHeadingCommandWz = 0.0f;
+enum StationAlignPulseAxis : uint8_t {
+  STATION_PULSE_AXIS_NONE = 0,
+  STATION_PULSE_AXIS_X,
+  STATION_PULSE_AXIS_Y
+};
+enum StationAlignPulsePhase : uint8_t {
+  STATION_PULSE_DRIVE = 0,
+  STATION_PULSE_CREEP,
+  STATION_PULSE_OBSTACLE_BOOST,
+  STATION_PULSE_REVERSE_WAIT
+};
+StationAlignPulseAxis stationAlignPulseAxis = STATION_PULSE_AXIS_NONE;
+StationAlignPulsePhase stationAlignPulsePhase = STATION_PULSE_DRIVE;
+int8_t stationAlignPulseSign = 0;
+uint32_t stationAlignPulsePhaseStartedMs = 0;
+bool stationStopLineLatched[6] = {false, false, false, false, false, false};
+bool stationHoldLineLatched[2] = {false, false};
 float lateralLineHoldCommandVx = 0.0f;
 int8_t lateralLineHoldLastSign = 0;
 uint32_t lateralLineHoldLastSeenMs = 0;
 uint32_t lateralLineHoldStartedMs = 0;
+bool lateralLineEncoderFallbackActive = false;
 float firstLateralStartedYmm = 0.0f;
 bool firstLateralGuidanceArmed = false;
 float currentYawDeg = 0, targetYawDeg = 0, yawReferenceDeg = 0;
@@ -320,13 +424,23 @@ enum BridgeEndMarkerSource : uint8_t {
 BridgeSlopePhase bridgeSlopePhase = BRIDGE_PHASE_APPROACH;
 BridgeEndMarkerSource bridgeEndMarkerSource = BRIDGE_MARKER_NONE;
 RobotPose bridgeEndMarkerPose;
+RobotPose bridgeMarkerArmedPose;
 float bridgeEndMarkerAdvanceTargetMm = 0.0f;
 float bridgeLevelRollDeg = 0.0f, bridgeLevelPitchDeg = 0.0f;
 float bridgeRelativeTiltDeg = 0.0f;
 uint32_t bridgeInclineSinceMs = 0, bridgeLevelSinceMs = 0;
 uint32_t bridgeDescentSinceMs = 0;
 uint32_t bridgeDescentLevelSinceMs = 0;
+uint32_t bridgeCrestDetectedMs = 0;
+uint32_t bridgeLineGapStartedMs = 0;
+uint32_t bridgeDescentLineRecoverySinceMs = 0;
+float bridgeLastValidLineVy = 0.0f;
+bool bridgeLineGapActive = false;
+bool bridgeLineGapHoldExpiredReported = false;
 bool bridgeEndMarkerArmed = false;
+bool bridgeMarkerDistanceGateReported = false;
+
+
 uint32_t bridgeEndMarkerSinceMs = 0, bridgeSideMarkerSinceMs = 0;
 uint32_t postBridgeE18LineSinceMs = 0;
 bool postBridgeCoarseMoveDone = false;
@@ -337,11 +451,16 @@ uint8_t doneTha2BAttempts = 0;
 uint32_t lastDoneTha2BSendMs = 0;
 uint32_t bridgeAscentDetectedMs = 0;
 uint8_t bridgeSlopeAxis = 0; // 1=roll X, 2=pitch Y
+int8_t bridgeAscentSlopeSign = 0; // Dấu nghiêng BNO085 khi robot đang leo dốc.
+float bridgePeakRollDeg = 0.0f;
+float bridgePeakPitchDeg = 0.0f;
 float competitionHeadingDeg = 0.0f; // Captured once at START and held through A/B
 float tofDistanceMm = 0;
 float lateralSlipMmS = 0;
 uint32_t lastBnoMs = 0, lastTofMs = 0;
 uint32_t lastControlUs = 0, lastTelemetryMs = 0;
+uint32_t lastTelemetryStageMs = 0;
+uint8_t telemetryStage = 0;
 AutoState state = WAIT_START;
 
 class DebouncedActiveLowButton {
@@ -487,8 +606,12 @@ uint16_t stopCalMax[6];
 void applyFactoryPidConfig() {
   for(uint8_t i=0;i<4;i++){
     wheels[i].pid.kp=WHEEL_KP[i];wheels[i].pid.ki=WHEEL_KI[i];
-    wheels[i].pid.kd=WHEEL_KD[i];wheels[i].kff=WHEEL_KFF[i];
-    wheels[i].deadzone=WHEEL_DEADZONE_PWM[i];wheels[i].pid.reset();
+    wheels[i].pid.kd=WHEEL_KD[i];
+    wheels[i].kffPositive=WHEEL_KFF_POSITIVE[i];
+    wheels[i].kffNegative=WHEEL_KFF_NEGATIVE[i];
+    wheels[i].deadzonePositive=WHEEL_DEADZONE_PWM_POSITIVE[i];
+    wheels[i].deadzoneNegative=WHEEL_DEADZONE_PWM_NEGATIVE[i];
+    wheels[i].pid.reset();
   }
   headingPid.kp=HEADING_KP;headingPid.ki=HEADING_KI;headingPid.kd=HEADING_KD;
   linePid.kp=LINE_KP;linePid.ki=LINE_KI;linePid.kd=LINE_KD;
@@ -529,12 +652,16 @@ uint32_t readU32LE(const uint8_t *p) {
 void resetAllControllers();
 void stopRobot();
 void transitionTo(AutoState next);
+void beginBridgeBResumeHandshake();
+void updateBridgeBResumeHandshake();
 
 bool stationAlignmentInProgress() {
   return state == DI_SANG_TRAI_A || state == BU_TAM_A ||
          state == CAN_YAW_A || state == CAN_A ||
          state == DI_SANG_TRAI_B || state == BU_TAM_B ||
-         state == CAN_YAW_B || state == CAN_B;
+         state == CAN_YAW_B || state == CAN_B ||
+         state == BACKUP_C_TRAVEL || state == BACKUP_C_ALIGN ||
+         state == BACKUP_C_VERIFY || state == BACKUP_C_WAIT_MECHANISM;
 }
 
 void setFault(FaultCode fault, const char *reason) {
@@ -705,8 +832,12 @@ void updateWheelSpeedPid(float dt) {
       return;
     }
 
-    const float sign = wheel.targetMmS > 0 ? 1.0f : -1.0f;
-    const float feedForward = wheel.kff * wheel.targetMmS + sign * wheel.deadzone;
+    const bool positive = wheel.targetMmS > 0.0f;
+    const float sign = positive ? 1.0f : -1.0f;
+    const float kff = positive ? wheel.kffPositive : wheel.kffNegative;
+    const int deadzone = positive ? wheel.deadzonePositive
+                                  : wheel.deadzoneNegative;
+    const float feedForward = kff * wheel.targetMmS + sign * deadzone;
     const float correction = wheel.pid.updateError(
         wheel.targetMmS - wheel.measuredMmS, dt,
         -PWM_MAX - feedForward, PWM_MAX - feedForward);
@@ -1036,11 +1167,12 @@ void updateLineArrays() {
   calculateStopPosition(&stopLine.normalized[3], stopLine.rightPosition, stopLine.rightValid);
 }
 
-float updateLineFollowing(float dt, float &vx) {
+float updateLineFollowingLimited(float dt, float &vx, float maxVy) {
+  maxVy = max(0.0f, maxVy);
   if (centerLine.valid) {
     // Convert physical array order to the robot convention (+Vy right).
     const float error = CENTER_LINE_CONTROL_SIGN * centerLine.position;
-    const float vy = linePid.updateError(error, dt, -MAX_LINE_VY_MM_S, MAX_LINE_VY_MM_S);
+    const float vy = linePid.updateError(error, dt, -maxVy, maxVy);
     const float severity = min(1.0f, fabsf(centerLine.position) / 3500.0f);
     // Retain only 20% forward speed at the edge so lateral correction has
     // enough time and wheel-speed headroom to bring the line back to center.
@@ -1055,11 +1187,134 @@ float updateLineFollowing(float dt, float &vx) {
   }
   vx *= 0.10f;
   if (centerLine.state == LINE_LOST_LEFT)
-    return CENTER_LINE_CONTROL_SIGN * -LINE_LOST_SEARCH_VY_MM_S;
+    return CENTER_LINE_CONTROL_SIGN * -min(LINE_LOST_SEARCH_VY_MM_S, maxVy);
   if (centerLine.state == LINE_LOST_RIGHT)
-    return CENTER_LINE_CONTROL_SIGN * LINE_LOST_SEARCH_VY_MM_S;
+    return CENTER_LINE_CONTROL_SIGN * min(LINE_LOST_SEARCH_VY_MM_S, maxVy);
   return 0;
 }
+
+float updateLineFollowing(float dt, float &vx) {
+  return updateLineFollowingLimited(dt, vx, MAX_LINE_VY_MM_S);
+}
+
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+bool bridgeLine1150DebugActive = false;
+bool bridgeLine1150EyesInitialized = false;
+bool bridgeLine1150WasValid = false;
+bool bridgeLine1150SummaryPrinted = false;
+bool bridgeLine1150PreviousBlack[8] = {};
+uint16_t bridgeLine1150DropCount[8] = {};
+uint32_t bridgeLine1150LostStartedMs = 0;
+uint32_t bridgeLine1150MaxLostMs = 0;
+uint32_t bridgeLine1150LastPrintMs = 0;
+
+void resetBridgeLine1150Debug() {
+  bridgeLine1150DebugActive = true;
+  bridgeLine1150EyesInitialized = true;
+  bridgeLine1150WasValid = centerLine.valid;
+  bridgeLine1150SummaryPrinted = false;
+  bridgeLine1150LostStartedMs = centerLine.valid ? 0 : millis();
+  bridgeLine1150MaxLostMs = 0;
+  bridgeLine1150LastPrintMs = 0;
+  for (uint8_t i = 0; i < 8; ++i) {
+    bridgeLine1150PreviousBlack[i] =
+        centerLine.normalized[i] >= LINE_ACTIVE_NORMALIZED;
+    bridgeLine1150DropCount[i] = 0;
+  }
+  Serial.println("BRIDGE1150,START,SPEED_MM_S,1150,CHASSIS_ONLY,1");
+  Serial.println(
+      "BRIDGE1150_COLUMNS,MS,PHASE,VALID,POSITION,ACTIVE,LOST_MS,"
+      "RAW_CH0,RAW_CH1,RAW_CH2,RAW_CH3,RAW_CH4,RAW_CH5,RAW_CH6,RAW_CH7,"
+      "NORM_CH0,NORM_CH1,NORM_CH2,NORM_CH3,NORM_CH4,NORM_CH5,NORM_CH6,NORM_CH7,"
+      "BLACK_MASK,VX,VY,WZ,ROLL,PITCH,YAW,FAULT");
+}
+
+void printBridgeLine1150Summary(const char *reason) {
+  if (bridgeLine1150SummaryPrinted) return;
+  bridgeLine1150SummaryPrinted = true;
+  bridgeLine1150DebugActive = false;
+  Serial.print("BRIDGE1150_SUMMARY,");
+  Serial.print(reason);
+  Serial.print(",MAX_LINE_LOST_MS,");
+  Serial.print(bridgeLine1150MaxLostMs);
+  for (uint8_t i = 0; i < 8; ++i) {
+    Serial.print(",CH");Serial.print(i);Serial.print("_DROPS,");
+    Serial.print(bridgeLine1150DropCount[i]);
+  }
+  Serial.print(",FAULT,");Serial.println(faultFlags);
+}
+
+void updateBridgeLine1150Debug() {
+  if (!bridgeLine1150DebugActive) return;
+  const uint32_t nowMs = millis();
+  uint8_t blackMask = 0;
+  for (uint8_t i = 0; i < 8; ++i) {
+    const bool black = centerLine.normalized[i] >= LINE_ACTIVE_NORMALIZED;
+    if (black) blackMask |= static_cast<uint8_t>(1U << i);
+    if (bridgeLine1150EyesInitialized &&
+        black != bridgeLine1150PreviousBlack[i]) {
+      Serial.print("BRIDGE1150_EYE,");
+      Serial.print(black ? "FOUND" : "DROP");
+      Serial.print(',');Serial.print(nowMs);
+      Serial.print(",CH");Serial.print(i);
+      Serial.print(",RAW,");Serial.print(centerLine.raw[i]);
+      Serial.print(",NORM,");Serial.print(centerLine.normalized[i]);
+      Serial.print(",POSITION,");Serial.println(centerLine.position,1);
+      if (!black) bridgeLine1150DropCount[i]++;
+    }
+    bridgeLine1150PreviousBlack[i] = black;
+  }
+  bridgeLine1150EyesInitialized = true;
+
+  if (!centerLine.valid) {
+    if (bridgeLine1150WasValid || bridgeLine1150LostStartedMs == 0) {
+      bridgeLine1150LostStartedMs = nowMs;
+      Serial.print("BRIDGE1150_LINE,LOST,");Serial.println(nowMs);
+    }
+    bridgeLine1150MaxLostMs = max(
+        bridgeLine1150MaxLostMs, nowMs - bridgeLine1150LostStartedMs);
+  } else if (!bridgeLine1150WasValid) {
+    const uint32_t lostFor = bridgeLine1150LostStartedMs == 0
+        ? 0 : nowMs - bridgeLine1150LostStartedMs;
+    bridgeLine1150MaxLostMs = max(bridgeLine1150MaxLostMs, lostFor);
+    Serial.print("BRIDGE1150_LINE,FOUND,");Serial.print(nowMs);
+    Serial.print(",LOST_FOR_MS,");Serial.println(lostFor);
+    bridgeLine1150LostStartedMs = 0;
+  }
+  bridgeLine1150WasValid = centerLine.valid;
+
+  if (nowMs - bridgeLine1150LastPrintMs >= 50) {
+    bridgeLine1150LastPrintMs = nowMs;
+    const uint32_t lostMs = centerLine.valid || centerLine.lastValidMs == 0
+        ? 0 : nowMs - centerLine.lastValidMs;
+    Serial.print("BRIDGE1150_DATA,");Serial.print(nowMs);
+    Serial.print(',');Serial.print(static_cast<uint8_t>(bridgeSlopePhase));
+    Serial.print(',');Serial.print(centerLine.valid ? 1 : 0);
+    Serial.print(',');Serial.print(centerLine.position,1);
+    Serial.print(',');Serial.print(centerLine.activeCount);
+    Serial.print(',');Serial.print(lostMs);
+    for (uint8_t i = 0; i < 8; ++i) {
+      Serial.print(',');Serial.print(centerLine.raw[i]);
+    }
+    for (uint8_t i = 0; i < 8; ++i) {
+      Serial.print(',');Serial.print(centerLine.normalized[i]);
+    }
+    Serial.print(',');Serial.print(blackMask, HEX);
+    Serial.print(',');Serial.print(robotVx,1);
+    Serial.print(',');Serial.print(robotVy,1);
+    Serial.print(',');Serial.print(robotWz,3);
+    Serial.print(',');Serial.print(currentRollDeg,2);
+    Serial.print(',');Serial.print(currentPitchDeg,2);
+    Serial.print(',');Serial.print(currentYawDeg,2);
+    Serial.print(',');Serial.println(faultFlags);
+  }
+
+  if (faultFlags != FAULT_NONE)
+    printBridgeLine1150Summary("FAULT");
+  else if (!armed)
+    printBridgeLine1150Summary("STOPPED");
+}
+#endif
 
 void printLineCalibration() {
   Serial.print("CENTER_MIN=");
@@ -1309,6 +1564,7 @@ void resetLateralLineHold() {
   lateralLineHoldLastSign = 0;
   lateralLineHoldLastSeenMs = 0;
   lateralLineHoldStartedMs = millis();
+  lateralLineEncoderFallbackActive = false;
 }
 
 float lateralLineHoldVelocity(float dt) {
@@ -1338,6 +1594,53 @@ float lateralLineHoldVelocity(float dt) {
              LATERAL_HOLD_ACQUIRE_TIMEOUT_MS) {
     setFault(FAULT_LINE_LOST, "LATERAL_H1_H2_LOST");
     return 0.0f;
+  }
+
+  const float maxStep = LATERAL_HOLD_SLEW_MM_S2 * max(dt, 0.0f);
+  lateralLineHoldCommandVx += constrain(
+      requestedVx - lateralLineHoldCommandVx, -maxStep, maxStep);
+  if (requestedVx == 0.0f && fabsf(lateralLineHoldCommandVx) <= maxStep)
+    lateralLineHoldCommandVx = 0.0f;
+  return lateralLineHoldCommandVx;
+}
+
+// Travel-only H1/H2 hold. If a sudden longitudinal slip throws both eyes off
+// the guide, fall back to the X encoder reference captured at segment start.
+// This keeps searching toward the known centre instead of raising an immediate
+// LATERAL_H1_H2_LOST fault. Precise station alignment still uses the strict
+// lateralLineHoldVelocity() above and therefore still requires H1/H2.
+float lateralTravelHoldVelocity(float dt) {
+  const bool tailOnLine =
+      stopLine.holdNormalized[0] >= LATERAL_HOLD_LINE_THRESHOLD;
+  const bool frontOnLine =
+      stopLine.holdNormalized[1] >= LATERAL_HOLD_LINE_THRESHOLD;
+
+  if (tailOnLine || frontOnLine) {
+    if (lateralLineEncoderFallbackActive)
+      Serial.println("ACK,AUTO_H1_H2_REACQUIRED_LINE_PRIMARY");
+    lateralLineEncoderFallbackActive = false;
+    return lateralLineHoldVelocity(dt);
+  }
+
+  if (!lateralLineEncoderFallbackActive) {
+    lateralLineEncoderFallbackActive = true;
+    Serial.println("ACK,AUTO_H1_H2_BOTH_LOST_ENCODER_X_FALLBACK");
+  }
+
+  const float encoderErrorX = lateralHoldXMm - pose.x_mm;
+  positionErrorX = encoderErrorX;
+  float requestedVx = 0.0f;
+  if (fabsf(encoderErrorX) > LATERAL_X_HOLD_DEADBAND_MM) {
+    requestedVx = constrain(LATERAL_X_HOLD_KP * encoderErrorX,
+                            -LATERAL_X_HOLD_MAX_SPEED_MM_S,
+                             LATERAL_X_HOLD_MAX_SPEED_MM_S);
+    if (fabsf(requestedVx) < LATERAL_HOLD_SEARCH_SPEED_MM_S)
+      requestedVx = copysignf(LATERAL_HOLD_SEARCH_SPEED_MM_S, encoderErrorX);
+    lateralLineHoldLastSign = requestedVx > 0.0f ? 1 : -1;
+  } else if (lateralLineHoldLastSign != 0 &&
+             millis() - lateralLineHoldLastSeenMs <=
+                 LATERAL_HOLD_LOST_TIMEOUT_MS) {
+    requestedVx = lateralLineHoldLastSign * LATERAL_HOLD_SEARCH_SPEED_MM_S;
   }
 
   const float maxStep = LATERAL_HOLD_SLEW_MM_S2 * max(dt, 0.0f);
@@ -1466,9 +1769,58 @@ bool updateRelativeLateralMoveWithHold(float dt) {
 
   const float vy = positionYPid.updateError(
       error, dt, -moveCommand.maxSpeed, moveCommand.maxSpeed);
-  const float vx = lateralLineHoldVelocity(dt);
+  const float holdVx = lateralTravelHoldVelocity(dt);
+  const float aToBUphillBias=
+      state==DI_SANG_TRAI_B&&selectedField==FIELD_RED
+          ?RED_A_TO_B_UPHILL_BIAS_MM_S:0.0f;
+  const float compensatedVx=constrain(
+      holdVx+aToBUphillBias,
+      -LATERAL_X_HOLD_MAX_SPEED_MM_S,
+       LATERAL_X_HOLD_MAX_SPEED_MM_S);
+  setRobotVelocity(compensatedVx, vy, headingControlLateral(dt));
+  return false;
+}
+
+// Encoder-only lateral travel used while H1/H2 hold is intentionally disabled.
+// It still closes both odometry axes, but uses the slew-limited lateral heading
+// controller so a small yaw error cannot inject a hard +/-Wz step into the
+// diagonal wheel pairs.
+bool updateRelativeLateralEncoderMove(float dt,bool stopAtTarget=true) {
+  if (!moveCommand.active) return true;
+  const float worldDx = pose.x_mm - moveCommand.start.x_mm;
+  const float worldDy = pose.y_mm - moveCommand.start.y_mm;
+  const float yaw = -moveCommand.start.yaw_deg * PI / 180.0f;
+  const float localX = cosf(yaw) * worldDx - sinf(yaw) * worldDy;
+  const float localY = sinf(yaw) * worldDx + cosf(yaw) * worldDy;
+  const float ex = moveCommand.dx - localX;
+  const float ey = moveCommand.dy - localY;
+  positionErrorX = ex;
+  positionErrorY = ey;
+  if (fabsf(ex) < 18.0f && fabsf(ey) < 18.0f) {
+    moveCommand.active = false;
+    if(stopAtTarget)stopRobot();
+    return true;
+  }
+
+  float vx = positionXPid.updateError(
+      ex, dt, -moveCommand.maxSpeed, moveCommand.maxSpeed);
+  float vy = positionYPid.updateError(
+      ey, dt, -moveCommand.maxSpeed, moveCommand.maxSpeed);
+  const float translationMagnitude = hypotf(vx, vy);
+  if (translationMagnitude > moveCommand.maxSpeed &&
+      translationMagnitude > 0.0f) {
+    const float scale = moveCommand.maxSpeed / translationMagnitude;
+    vx *= scale;
+    vy *= scale;
+  }
   setRobotVelocity(vx, vy, headingControlLateral(dt));
   return false;
+}
+
+bool updateRelativeLateralTravel(float dt) {
+  return H1_H2_TRAVEL_HOLD_ENABLED
+      ?updateRelativeLateralMoveWithHold(dt)
+      :updateRelativeLateralEncoderMove(dt);
 }
 
 bool updateRelativeMoveWithLine(float dt) {
@@ -1496,9 +1848,11 @@ bool updateBridgeLineUntilEndMarker(float dt) {
     return false;
   }
 
-  const float relativeRoll = fabsf(
-      shortestAngleError(currentRollDeg, bridgeLevelRollDeg));
-  const float relativePitch = fabsf(currentPitchDeg - bridgeLevelPitchDeg);
+  const float signedRelativeRoll =
+      shortestAngleError(currentRollDeg, bridgeLevelRollDeg);
+  const float signedRelativePitch = currentPitchDeg - bridgeLevelPitchDeg;
+  const float relativeRoll = fabsf(signedRelativeRoll);
+  const float relativePitch = fabsf(signedRelativePitch);
   bridgeRelativeTiltDeg = max(relativeRoll, relativePitch);
   const uint32_t nowMs = millis();
 
@@ -1508,6 +1862,11 @@ bool updateBridgeLineUntilEndMarker(float dt) {
       if (nowMs - bridgeInclineSinceMs >= BRIDGE_INCLINE_CONFIRM_MS) {
         bridgeSlopePhase = BRIDGE_PHASE_ASCENDING;
         bridgeSlopeAxis = relativeRoll >= relativePitch ? 1 : 2;
+        const float signedSlope = bridgeSlopeAxis == 1
+            ? signedRelativeRoll : signedRelativePitch;
+        bridgeAscentSlopeSign = signedSlope >= 0.0f ? 1 : -1;
+        bridgePeakRollDeg = relativeRoll;
+        bridgePeakPitchDeg = relativePitch;
         bridgeAscentDetectedMs = nowMs;
         bridgeInclineSinceMs = 0;
         bridgeLevelSinceMs = 0;
@@ -1517,32 +1876,89 @@ bool updateBridgeLineUntilEndMarker(float dt) {
       bridgeInclineSinceMs = 0;
     }
   } else if (bridgeSlopePhase == BRIDGE_PHASE_ASCENDING) {
+    if (selectedField == FIELD_BLUE) {
+      // A bump at the ramp entrance can make the first roll/pitch sample choose
+      // the wrong axis. Use the largest sustained excursion seen while climbing
+      // so BLUE can correct that initial choice before crest detection.
+      bridgePeakRollDeg = max(bridgePeakRollDeg, relativeRoll);
+      bridgePeakPitchDeg = max(bridgePeakPitchDeg, relativePitch);
+      bridgeSlopeAxis = bridgePeakRollDeg >= bridgePeakPitchDeg ? 1 : 2;
+      const float selectedSignedTilt = bridgeSlopeAxis == 1
+          ? signedRelativeRoll : signedRelativePitch;
+      const float selectedTilt = bridgeSlopeAxis == 1
+          ? relativeRoll : relativePitch;
+      if (selectedTilt >= BRIDGE_INCLINE_ENTER_DEG)
+        bridgeAscentSlopeSign = selectedSignedTilt >= 0.0f ? 1 : -1;
+    }
     const float slopeAxisTilt = bridgeSlopeAxis == 1 ? relativeRoll : relativePitch;
+    const float peakSlopeTilt = bridgeSlopeAxis == 1
+        ? bridgePeakRollDeg : bridgePeakPitchDeg;
+    const uint32_t minimumAscentMs = selectedField == FIELD_BLUE
+        ? BLUE_BRIDGE_MIN_ASCENT_BEFORE_CREST_MS
+        : BRIDGE_MIN_ASCENT_BEFORE_CREST_MS;
     const bool ascentOldEnough =
-        nowMs - bridgeAscentDetectedMs >= BRIDGE_MIN_ASCENT_BEFORE_CREST_MS;
-    if (ascentOldEnough && slopeAxisTilt <= BRIDGE_CREST_LEVEL_DEG) {
-      if (!bridgeLevelSinceMs) bridgeLevelSinceMs = nowMs;
+        nowMs - bridgeAscentDetectedMs >= minimumAscentMs;
+    const bool nearCapturedLevel = slopeAxisTilt <= BRIDGE_CREST_LEVEL_DEG;
+    const bool blueDroppedFromPeak = selectedField == FIELD_BLUE &&
+        peakSlopeTilt >= BLUE_BRIDGE_CREST_MIN_PEAK_DEG &&
+        slopeAxisTilt <= BLUE_BRIDGE_CREST_DROP_MAX_TILT_DEG &&
+        slopeAxisTilt <=
+            peakSlopeTilt - BLUE_BRIDGE_CREST_DROP_FROM_PEAK_DEG;
+    if (ascentOldEnough && (nearCapturedLevel || blueDroppedFromPeak)) {
+      if (!bridgeLevelSinceMs) {
+        bridgeLevelSinceMs = nowMs;
+        if (selectedField == FIELD_BLUE)
+          Serial.println("ACK,AUTO_BLUE_BRIDGE_PRE_CREST_BRAKE");
+      }
       if (nowMs - bridgeLevelSinceMs >= BRIDGE_CREST_CONFIRM_MS) {
         bridgeSlopePhase = BRIDGE_PHASE_CREST;
+        bridgeCrestDetectedMs = nowMs;
         bridgeLevelSinceMs = 0;
         bridgeDescentSinceMs = 0;
+        linePid.reset();
+        bridgeLastValidLineVy = 0.0f;
         Serial.println("ACK,AUTO_BRIDGE_CREST_DETECTED_REDUCE_SPEED");
+        Serial.print("ACK,AUTO_BRIDGE_CREST_DETAIL,FIELD,");
+        Serial.print(selectedField == FIELD_BLUE ? "BLUE" : "RED");
+        Serial.print(",AXIS,");Serial.print(bridgeSlopeAxis);
+        Serial.print(",PEAK_DEG,");Serial.print(peakSlopeTilt,2);
+        Serial.print(",CURRENT_DEG,");Serial.print(slopeAxisTilt,2);
+        Serial.print(",REASON,");
+        Serial.println(nearCapturedLevel ? "LEVEL" : "DROP_FROM_PEAK");
       }
     } else {
       bridgeLevelSinceMs = 0;
     }
   } else if (bridgeSlopePhase == BRIDGE_PHASE_CREST) {
     const float slopeAxisTilt = bridgeSlopeAxis == 1 ? relativeRoll : relativePitch;
-    if (slopeAxisTilt >= BRIDGE_DESCENT_ENTER_DEG) {
+    const float signedSlopeAxisTilt = bridgeSlopeAxis == 1
+        ? signedRelativeRoll : signedRelativePitch;
+    const float descentEnterDeg = selectedField == FIELD_BLUE
+        ? BLUE_BRIDGE_DESCENT_ENTER_DEG : BRIDGE_DESCENT_ENTER_DEG;
+    const uint32_t descentConfirmMs = selectedField == FIELD_BLUE
+        ? BLUE_BRIDGE_DESCENT_CONFIRM_MS : BRIDGE_DESCENT_CONFIRM_MS;
+    const bool blueOppositeDescent = bridgeAscentSlopeSign != 0 &&
+        bridgeAscentSlopeSign * signedSlopeAxisTilt <= -descentEnterDeg;
+    const bool descentDetected = selectedField == FIELD_BLUE
+        ? blueOppositeDescent : slopeAxisTilt >= descentEnterDeg;
+    if (descentDetected) {
       if (!bridgeDescentSinceMs) bridgeDescentSinceMs = nowMs;
-      if (nowMs - bridgeDescentSinceMs >= BRIDGE_DESCENT_CONFIRM_MS) {
+      if (nowMs - bridgeDescentSinceMs >= descentConfirmMs) {
         bridgeSlopePhase = BRIDGE_PHASE_DESCENDING;
         bridgeDescentSinceMs = 0;
         bridgeDescentLevelSinceMs = 0;
+        linePid.reset();
+        bridgeLastValidLineVy = 0.0f;
         bridgeEndMarkerArmed = false;
         bridgeEndMarkerSinceMs = 0;
         bridgeSideMarkerSinceMs = 0;
-        Serial.println("ACK,AUTO_BRIDGE_DESCENT_DETECTED_WAIT_LEVEL_500MS");
+        Serial.println("ACK,AUTO_BRIDGE_DESCENT_DETECTED_WAIT_LEVEL_800MS");
+        if (selectedField == FIELD_BLUE) {
+          Serial.print("ACK,AUTO_BLUE_BRIDGE_DESCENT_DIRECTION,ASCENT_SIGN,");
+          Serial.print(bridgeAscentSlopeSign);
+          Serial.print(",SIGNED_TILT,");
+          Serial.println(signedSlopeAxisTilt, 2);
+        }
       }
     } else {
       bridgeDescentSinceMs = 0;
@@ -1555,27 +1971,172 @@ bool updateBridgeLineUntilEndMarker(float dt) {
       if (nowMs - bridgeDescentLevelSinceMs >=
           BRIDGE_DESCENT_EXIT_LEVEL_CONFIRM_MS) {
         bridgeEndMarkerArmed = true;
+        bridgeMarkerArmedPose = pose;
+        bridgeMarkerDistanceGateReported = false;
+
+
         bridgeEndMarkerSinceMs = 0;
         bridgeSideMarkerSinceMs = 0;
-        Serial.println("ACK,AUTO_BRIDGE_LEVEL_STABLE_500MS_MARKERS_ARMED");
+        Serial.println("ACK,AUTO_BRIDGE_LEVEL_STABLE_800MS_WAIT_FORWARD_150MM");
+        beginBridgeBResumeHandshake();
       }
     } else {
-      // Any renewed slope or chassis bounce restarts the full 500 ms window.
+      // Any renewed slope or chassis bounce restarts the full stable window.
       bridgeDescentLevelSinceMs = 0;
     }
   }
 
   float vx = BRIDGE_APPROACH_SPEED_MM_S;
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+  // The standalone test holds one known forward command from the foot of the
+  // bridge through the ascent so sensor loss can be compared against time.
+  if (bridgeSlopePhase == BRIDGE_PHASE_APPROACH ||
+      bridgeSlopePhase == BRIDGE_PHASE_ASCENDING)
+    vx = ROBOCON_BRIDGE_LINE_TEST_SPEED_MM_S;
+#else
   if (bridgeSlopePhase == BRIDGE_PHASE_ASCENDING)
-    vx = BRIDGE_FORWARD_SPEED_MM_S;
+    vx = selectedField == FIELD_BLUE ? BLUE_BRIDGE_FORWARD_SPEED_MM_S
+                                     : BRIDGE_FORWARD_SPEED_MM_S;
+#endif
   else if (bridgeSlopePhase == BRIDGE_PHASE_CREST)
-    vx = BRIDGE_CREST_SPEED_MM_S;
+    vx = selectedField == FIELD_BLUE ? BLUE_BRIDGE_CREST_SPEED_MM_S
+                                     : BRIDGE_CREST_SPEED_MM_S;
   else if (bridgeSlopePhase == BRIDGE_PHASE_DESCENDING)
     vx = bridgeEndMarkerSource == BRIDGE_MARKER_NONE
-             ? BRIDGE_DESCENT_SPEED_MM_S
+             ? (selectedField == FIELD_BLUE
+                    ? BLUE_BRIDGE_DESCENT_SPEED_MM_S
+                    : BRIDGE_DESCENT_SPEED_MM_S)
              : BRIDGE_POST_MARKER_SPEED_MM_S;
 
-  const float vy = updateLineFollowing(dt, vx);
+  // RED accelerates only after the chassis has remained level long enough to
+  // arm the real post-bridge marker. Keep the physical descent at its original
+  // speed so this optimisation cannot increase the landing impact.
+  if (selectedField == FIELD_RED &&
+      bridgeSlopePhase == BRIDGE_PHASE_DESCENDING &&
+      bridgeEndMarkerArmed &&
+      bridgeEndMarkerSource == BRIDGE_MARKER_NONE)
+    vx = RED_POST_BRIDGE_MARKER_SEARCH_SPEED_MM_S;
+
+  const bool blueOnUpperBridge = selectedField == FIELD_BLUE &&
+      (bridgeSlopePhase == BRIDGE_PHASE_ASCENDING ||
+       bridgeSlopePhase == BRIDGE_PHASE_CREST);
+  const bool blueOnBridgeGapHold = selectedField == FIELD_BLUE &&
+      bridgeEndMarkerSource == BRIDGE_MARKER_NONE &&
+      (blueOnUpperBridge || bridgeSlopePhase == BRIDGE_PHASE_DESCENDING);
+  // The confirmation timer starts as soon as the incline begins flattening.
+  // Brake during this window instead of waiting until the robot is already
+  // descending. This also selects the lower speed across the crest line gap.
+  const bool blueAtCrestEdge = selectedField == FIELD_BLUE &&
+      (bridgeSlopePhase == BRIDGE_PHASE_CREST ||
+       (bridgeSlopePhase == BRIDGE_PHASE_ASCENDING &&
+        bridgeLevelSinceMs != 0));
+  const bool blueCrestTractionHold = selectedField == FIELD_BLUE &&
+      bridgeSlopePhase == BRIDGE_PHASE_CREST &&
+      bridgeCrestDetectedMs != 0 &&
+      nowMs - bridgeCrestDetectedMs < BLUE_BRIDGE_CREST_TRACTION_HOLD_MS;
+  float bridgeLineMaxVy = MAX_LINE_VY_MM_S;
+  if (selectedField == FIELD_BLUE) {
+    if (blueAtCrestEdge)
+      bridgeLineMaxVy = BLUE_BRIDGE_CREST_MAX_LINE_VY_MM_S;
+    else if (bridgeSlopePhase == BRIDGE_PHASE_DESCENDING)
+      bridgeLineMaxVy = BLUE_BRIDGE_DESCENT_MAX_LINE_VY_MM_S;
+  }
+
+  float vy = 0.0f;
+  if (centerLine.valid) {
+    const bool blueDescentLineRecovered =
+        selectedField == FIELD_BLUE &&
+        bridgeSlopePhase == BRIDGE_PHASE_DESCENDING &&
+        bridgeLineGapActive;
+    if (bridgeLineGapActive) {
+      Serial.print("ACK,AUTO_BLUE_BRIDGE_LINE_RECOVERED,MS,");
+      Serial.println(nowMs - bridgeLineGapStartedMs);
+    }
+    if (blueDescentLineRecovered) {
+      bridgeDescentLineRecoverySinceMs = nowMs;
+      Serial.print("ACK,AUTO_BLUE_BRIDGE_LINE_RECOVERY_RAMP,MS,");
+      Serial.println(BLUE_BRIDGE_DESCENT_LINE_RECOVERY_RAMP_MS);
+    }
+    bridgeLineGapActive = false;
+    bridgeLineGapStartedMs = 0;
+    bridgeLineGapHoldExpiredReported = false;
+    vy = updateLineFollowingLimited(dt, vx, bridgeLineMaxVy);
+    if (selectedField == FIELD_BLUE &&
+        bridgeSlopePhase == BRIDGE_PHASE_DESCENDING &&
+        bridgeDescentLineRecoverySinceMs != 0) {
+      const uint32_t recoveryElapsedMs =
+          nowMs - bridgeDescentLineRecoverySinceMs;
+      const float recoveryScale = constrain(
+          static_cast<float>(recoveryElapsedMs) /
+              BLUE_BRIDGE_DESCENT_LINE_RECOVERY_RAMP_MS,
+          0.0f, 1.0f);
+      vy *= recoveryScale;
+      if (recoveryElapsedMs >= BLUE_BRIDGE_DESCENT_LINE_RECOVERY_RAMP_MS)
+        bridgeDescentLineRecoverySinceMs = 0;
+    }
+    bridgeLastValidLineVy = vy;
+  } else {
+    bridgeDescentLineRecoverySinceMs = 0;
+    const uint32_t lostMs = centerLine.lastValidMs == 0
+        ? UINT32_MAX : nowMs - centerLine.lastValidMs;
+    const uint32_t bridgeGapHoldMs =
+        bridgeSlopePhase == BRIDGE_PHASE_DESCENDING
+            ? BLUE_BRIDGE_DESCENT_LINE_GAP_HOLD_MS
+            : (blueAtCrestEdge
+                ? BLUE_BRIDGE_CREST_LINE_GAP_HOLD_MS
+                : BLUE_BRIDGE_LINE_GAP_HOLD_MS);
+    const bool holdAcrossCrestGap = blueOnBridgeGapHold &&
+        lostMs <= bridgeGapHoldMs;
+    if (holdAcrossCrestGap) {
+      if (!bridgeLineGapActive) {
+        bridgeLineGapActive = true;
+        bridgeLineGapStartedMs = nowMs;
+        bridgeLineGapHoldExpiredReported = false;
+        linePid.reset();
+        Serial.print("ACK,AUTO_BLUE_BRIDGE_LINE_GAP_HOLD,PHASE,");
+        Serial.println(static_cast<uint8_t>(bridgeSlopePhase));
+      }
+      const float remaining = 1.0f - constrain(
+          static_cast<float>(lostMs) / bridgeGapHoldMs,
+          0.0f, 1.0f);
+      vy = bridgeLastValidLineVy * remaining;
+      if (bridgeSlopePhase == BRIDGE_PHASE_DESCENDING)
+        vx = BLUE_BRIDGE_DESCENT_LINE_GAP_SPEED_MM_S;
+      else
+        vx = blueAtCrestEdge
+            ? BLUE_BRIDGE_CREST_LINE_GAP_SPEED_MM_S
+            : BLUE_BRIDGE_LINE_GAP_SPEED_MM_S;
+    } else {
+      if (bridgeLineGapActive && !bridgeLineGapHoldExpiredReported) {
+        bridgeLineGapHoldExpiredReported = true;
+        Serial.print("ACK,AUTO_BLUE_BRIDGE_LINE_GAP_HOLD_EXPIRED,MS,");
+        Serial.println(nowMs - bridgeLineGapStartedMs);
+      }
+      // Normal recovery remains authoritative after the bounded hold. It
+      // reduces speed/searches laterally and raises CENTER_LINE_LOST at 650 ms.
+      vy = updateLineFollowingLimited(dt, vx, bridgeLineMaxVy);
+    }
+  }
+
+  // Preserve enough longitudinal force while BLUE is genuinely climbing.
+  // As soon as a crest candidate appears, command the pre-crest brake speed;
+  // waiting for formal crest confirmation made the robot rush downhill first.
+  if (selectedField == FIELD_BLUE && centerLine.valid &&
+      bridgeSlopePhase == BRIDGE_PHASE_ASCENDING) {
+    if (bridgeLevelSinceMs != 0)
+      vx = BLUE_BRIDGE_PRE_CREST_SPEED_MM_S;
+    else
+      vx = max(vx, BLUE_BRIDGE_ASCENT_MIN_SPEED_MM_S);
+  }
+  if (blueCrestTractionHold)
+    vx = max(vx, BLUE_BRIDGE_CREST_TRACTION_SPEED_MM_S);
+  if (selectedField == FIELD_BLUE && centerLine.valid) {
+    if (bridgeSlopePhase == BRIDGE_PHASE_CREST)
+      vx = max(vx, BLUE_BRIDGE_CREST_MIN_FORWARD_SPEED_MM_S);
+    else if (bridgeSlopePhase == BRIDGE_PHASE_DESCENDING &&
+             bridgeEndMarkerSource == BRIDGE_MARKER_NONE)
+      vx = max(vx, BLUE_BRIDGE_DESCENT_MIN_FORWARD_SPEED_MM_S);
+  }
   if (faultFlags != FAULT_NONE) {
     stopRobot();
     return false;
@@ -1598,19 +2159,36 @@ bool updateBridgeLineUntilEndMarker(float dt) {
     return false;
   }
 
-  // Only the real descent can arm the finish marker. The eight-eye center
-  // array detects a wide transverse line with >=6 active sensors. The side
-  // fallback requires both three-eye clusters, each with its middle eye or
-  // at least two of three eyes on black, which rejects a single noisy sensor.
+  // Only the real descent can arm the finish marker. BLUE additionally moves
+  // away from the landing/bounce zone before either detector can latch. The
+  // eight-eye array remains primary. Its side fallback requires at least two
+  // eyes in EACH three-eye cluster; one middle-eye pulse is never sufficient.
   if (bridgeSlopePhase == BRIDGE_PHASE_DESCENDING &&
       bridgeEndMarkerArmed) {
+    const float armedWorldDx = pose.x_mm - bridgeMarkerArmedPose.x_mm;
+    const float armedWorldDy = pose.y_mm - bridgeMarkerArmedPose.y_mm;
+    const float armedYaw = -bridgeMarkerArmedPose.yaw_deg * PI / 180.0f;
+    const float forwardAfterLevelMm =
+        cosf(armedYaw) * armedWorldDx - sinf(armedYaw) * armedWorldDy;
+    const float markerMinForwardMm = selectedField == FIELD_BLUE
+        ? BLUE_BRIDGE_MARKER_MIN_FORWARD_AFTER_LEVEL_MM : 0.0f;
+    if (forwardAfterLevelMm < markerMinForwardMm) {
+      bridgeEndMarkerSinceMs = 0;
+      bridgeSideMarkerSinceMs = 0;
+
+      return false;
+    }
+    if (!bridgeMarkerDistanceGateReported && markerMinForwardMm > 0.0f) {
+      bridgeMarkerDistanceGateReported = true;
+      Serial.print("ACK,AUTO_BLUE_BRIDGE_MARKER_DISTANCE_GATE_OPEN,MM,");
+      Serial.println(forwardAfterLevelMm, 1);
+    }
+
     auto groupSeesMarker = [](uint8_t offset) {
       uint8_t active = 0;
       for (uint8_t i = 0; i < 3; ++i)
         if (stopLine.normalized[offset + i] >= LINE_ACTIVE_NORMALIZED) ++active;
-      const bool middle =
-          stopLine.normalized[offset + 1] >= LINE_ACTIVE_NORMALIZED;
-      return middle || active >= 2;
+      return active >= 2;
     };
     uint8_t centerMarkerActive = 0;
     for (uint8_t i = 0; i < 8; ++i) {
@@ -1634,8 +2212,12 @@ bool updateBridgeLineUntilEndMarker(float dt) {
       bridgeSideMarkerSinceMs = 0;
     }
 
+    const uint32_t sideMarkerConfirmMs = selectedField == FIELD_BLUE
+        ? BLUE_BRIDGE_SIDE_MARKER_CONFIRM_MS : BRIDGE_SIDE_MARKER_CONFIRM_MS;
+    const uint32_t centerMarkerConfirmMs = selectedField == FIELD_BLUE
+        ? BLUE_BRIDGE_END_MARKER_CONFIRM_MS : BRIDGE_END_MARKER_CONFIRM_MS;
     if (bridgeEndMarkerSinceMs &&
-        nowMs - bridgeEndMarkerSinceMs >= BRIDGE_END_MARKER_CONFIRM_MS) {
+        nowMs - bridgeEndMarkerSinceMs >= centerMarkerConfirmMs) {
       bridgeEndMarkerSource = BRIDGE_MARKER_CENTER_8;
       bridgeEndMarkerAdvanceTargetMm = BRIDGE_CENTER_MARKER_ADVANCE_MM;
       bridgeEndMarkerPose = pose;
@@ -1644,7 +2226,7 @@ bool updateBridgeLineUntilEndMarker(float dt) {
 #endif
       Serial.println("ACK,AUTO_BRIDGE_MARKER_CENTER_8_ADVANCE_400MM");
     } else if (bridgeSideMarkerSinceMs &&
-               nowMs - bridgeSideMarkerSinceMs >= BRIDGE_SIDE_MARKER_CONFIRM_MS) {
+               nowMs - bridgeSideMarkerSinceMs >= sideMarkerConfirmMs) {
       bridgeEndMarkerSource = BRIDGE_MARKER_SIDE_CLUSTERS;
       bridgeEndMarkerAdvanceTargetMm = BRIDGE_SIDE_MARKER_ADVANCE_MM;
       bridgeEndMarkerPose = pose;
@@ -1656,6 +2238,8 @@ bool updateBridgeLineUntilEndMarker(float dt) {
   } else {
     bridgeEndMarkerSinceMs = 0;
     bridgeSideMarkerSinceMs = 0;
+
+
   }
   return false;
 }
@@ -1823,6 +2407,8 @@ uint32_t autoXStableSince=0,autoHeadingStableSince=0;
 float pointBSearchCenterYmm=0.0f;
 int8_t pointBSearchDirectionSign=1;
 uint32_t pointBPairLostSinceMs=0;
+uint32_t stationCommandLineStableSinceMs=0;
+bool stationMechanismCommandStarted=false;
 bool pointARightMiddleSeen=false,pointARightInsideSeen=false;
 uint32_t pointARightPairStartedMs=0;
 // Point-A pass memory: arm near the measured coordinate, then remember the
@@ -1835,6 +2421,118 @@ int8_t pointAPassDirectionSign=1;
 bool pointASidePairLocked=false;
 float pointAHSearchCenterXmm=0.0f;
 int8_t pointAHSearchDirectionSign=1;
+
+void resetStationAlignmentShaping(bool resetSensorLatches=true){
+  stationAlignPulseAxis=STATION_PULSE_AXIS_NONE;
+  stationAlignPulsePhase=STATION_PULSE_DRIVE;
+  stationAlignPulseSign=0;
+  stationAlignPulsePhaseStartedMs=millis();
+  if(resetSensorLatches){
+    for(uint8_t i=0;i<6;i++)stationStopLineLatched[i]=false;
+    for(uint8_t i=0;i<2;i++)stationHoldLineLatched[i]=false;
+  }
+}
+
+bool stationHystereticOnLine(uint16_t value,bool &latched,
+                             uint16_t acquireThreshold,
+                             uint16_t releaseThreshold){
+  if(latched){
+    if(value<=releaseThreshold)latched=false;
+  }else if(value>=acquireThreshold)latched=true;
+  return latched;
+}
+
+bool stationStopSensorOnLine(uint8_t index,uint16_t acquireThreshold){
+  if(index>=6)return false;
+  return stationHystereticOnLine(stopLine.normalized[index],
+      stationStopLineLatched[index],acquireThreshold,
+      STATION_SIDE_RELEASE_NORMALIZED);
+}
+
+bool stationHoldSensorOnLine(uint8_t index){
+  if(index>=2)return false;
+  return stationHystereticOnLine(stopLine.holdNormalized[index],
+      stationHoldLineLatched[index],LATERAL_HOLD_LINE_THRESHOLD,
+      STATION_HOLD_RELEASE_NORMALIZED);
+}
+
+float stationAlignmentPulsedVelocity(float requested,
+                                     StationAlignPulseAxis axis){
+  if(axis==STATION_PULSE_AXIS_NONE||fabsf(requested)<0.5f){
+    // A completed correction must not leave the next movement in CREEP.
+    // Reset only the motion shaping; preserve sensor hysteresis latches.
+    resetStationAlignmentShaping(false);
+    return 0.0f;
+  }
+  const int8_t requestedSign=requested>0.0f?1:-1;
+  const uint32_t now=millis();
+
+  if(stationAlignPulseAxis!=axis||stationAlignPulseSign==0){
+    stationAlignPulseAxis=axis;
+    stationAlignPulseSign=requestedSign;
+    stationAlignPulsePhase=STATION_PULSE_DRIVE;
+    stationAlignPulsePhaseStartedMs=now;
+  }else if(requestedSign!=stationAlignPulseSign){
+    stationAlignPulseSign=requestedSign;
+    stationAlignPulsePhase=STATION_PULSE_REVERSE_WAIT;
+    stationAlignPulsePhaseStartedMs=now;
+    return 0.0f;
+  }
+
+  if(stationAlignPulsePhase==STATION_PULSE_REVERSE_WAIT){
+    if(now-stationAlignPulsePhaseStartedMs<
+       STATION_ALIGN_REVERSE_DEADTIME_MS)return 0.0f;
+    stationAlignPulsePhase=STATION_PULSE_DRIVE;
+    stationAlignPulsePhaseStartedMs=now;
+  }
+
+  if(stationAlignPulsePhase==STATION_PULSE_DRIVE){
+    if(now-stationAlignPulsePhaseStartedMs<STATION_ALIGN_PULSE_ON_MS){
+      const float driveMagnitude=max(fabsf(requested),
+          STATION_ALIGN_BREAKAWAY_SPEED_MM_S);
+      return stationAlignPulseSign*driveMagnitude;
+    }
+    stationAlignPulsePhase=STATION_PULSE_CREEP;
+    stationAlignPulsePhaseStartedMs=now;
+  }
+
+  const bool obstacleBoostAllowed=
+      state==BU_TAM_A||state==BU_TAM_B||state==CAN_B;
+  if(stationAlignPulsePhase==STATION_PULSE_OBSTACLE_BOOST){
+    if(!obstacleBoostAllowed||
+       now-stationAlignPulsePhaseStartedMs>=
+           STATION_ALIGN_OBSTACLE_BOOST_MS){
+      stationAlignPulsePhase=STATION_PULSE_CREEP;
+      stationAlignPulsePhaseStartedMs=now;
+    }else{
+      const float boostMagnitude=max(fabsf(requested),
+          STATION_ALIGN_OBSTACLE_BOOST_SPEED_MM_S);
+      return stationAlignPulseSign*boostMagnitude;
+    }
+  }
+
+  if(obstacleBoostAllowed&&stationAlignPulsePhase==STATION_PULSE_CREEP&&
+     now-stationAlignPulsePhaseStartedMs>=
+         STATION_ALIGN_OBSTACLE_BOOST_INTERVAL_MS){
+    stationAlignPulsePhase=STATION_PULSE_OBSTACLE_BOOST;
+    stationAlignPulsePhaseStartedMs=now;
+    const float boostMagnitude=max(fabsf(requested),
+        STATION_ALIGN_OBSTACLE_BOOST_SPEED_MM_S);
+    return stationAlignPulseSign*boostMagnitude;
+  }
+
+  // Once static friction has been broken, keep a small continuous command.
+  // This removes the previous DRIVE -> STOP -> DRIVE judder at A/B.
+  const float creepMagnitude=min(fabsf(requested),
+      STATION_ALIGN_CREEP_SPEED_MM_S);
+  return stationAlignPulseSign*creepMagnitude;
+}
+
+int8_t preferredPointHSearchDirectionSign(){
+  return selectedField==FIELD_BLUE
+      ?BLUE_POINT_H_SEARCH_FIRST_SIGN
+      :RED_POINT_H_SEARCH_FIRST_SIGN;
+}
 // Locked after POINT_B: the two 3-eye pickup arrays remain visible in
 // telemetry but can no longer count lines or drive an AUTO transition.
 bool stopArrayCountingLocked=false;
@@ -1846,17 +2544,17 @@ uint8_t stopGroupActiveCount(uint8_t offset){
   return count;
 }
 
+bool h1H2BothOnLine(){
+  return stationHoldSensorOnLine(0)&&stationHoldSensorOnLine(1);
+}
+
 bool pointARequiredSensorsOnLine(bool rightGroup){
   const uint8_t offset=rightGroup?3:0;
-  const bool middleOnLine=
-      stopLine.normalized[offset+1]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
-  const bool insideOnLine=
-      stopLine.normalized[offset+2]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
-  const bool tailOnLine=
-      stopLine.holdNormalized[0]>=LATERAL_HOLD_LINE_THRESHOLD;
-  const bool frontOnLine=
-      stopLine.holdNormalized[1]>=LATERAL_HOLD_LINE_THRESHOLD;
-  return middleOnLine&&insideOnLine&&tailOnLine&&frontOnLine;
+  const bool middleOnLine=stationStopSensorOnLine(
+      offset+1,POINT_A_RIGHT_SENSOR_THRESHOLD);
+  const bool insideOnLine=stationStopSensorOnLine(
+      offset+2,POINT_A_RIGHT_SENSOR_THRESHOLD);
+  return middleOnLine&&insideOnLine&&h1H2BothOnLine();
 }
 
 void updatePointAPassMemory(bool rightGroup){
@@ -1869,8 +2567,37 @@ void updatePointAPassMemory(bool rightGroup){
 
 bool pointBRequiredSensorsOnLine(bool rightGroup){
   const uint8_t offset=rightGroup?3:0;
-  return stopLine.normalized[offset+1]>=LINE_ACTIVE_NORMALIZED&&
-         stopLine.normalized[offset+2]>=LINE_ACTIVE_NORMALIZED;
+  return stationStopSensorOnLine(offset+1,LINE_ACTIVE_NORMALIZED)&&
+         stationStopSensorOnLine(offset+2,LINE_ACTIVE_NORMALIZED);
+}
+
+bool pointBStationRequiredSensorsOnLine(bool rightGroup){
+  return pointBRequiredSensorsOnLine(rightGroup)&&h1H2BothOnLine();
+}
+
+// After the bridge, the larger field requires the outside (-1000) and middle
+// (0) eyes of either three-eye group. Point A/B above intentionally keep using
+// the original middle + inside pair.
+bool postBridgeOuterPairOnLine(bool rightGroup){
+  const uint8_t offset=rightGroup?3:0;
+  return stopLine.normalized[offset]>=LINE_ACTIVE_NORMALIZED&&
+         stopLine.normalized[offset+1]>=LINE_ACTIVE_NORMALIZED;
+}
+
+bool postBridgeOuterPairVisible(bool rightGroup){
+  const uint8_t offset=rightGroup?3:0;
+  return stopLine.normalized[offset]>=LINE_ACTIVE_NORMALIZED||
+         stopLine.normalized[offset+1]>=LINE_ACTIVE_NORMALIZED;
+}
+
+float postBridgeOuterPairPosition(bool rightGroup){
+  const uint8_t offset=rightGroup?3:0;
+  const float outsideStrength=stopLine.normalized[offset];
+  const float middleStrength=stopLine.normalized[offset+1];
+  const float pairStrength=outsideStrength+middleStrength;
+  return pairStrength>1.0f
+      ?-1000.0f*outsideStrength/pairStrength
+      :POST_BRIDGE_OUTER_PAIR_TARGET_POSITION;
 }
 
 bool updateAutoPickTravel(float dt,bool rightGroup,uint8_t targetCount){
@@ -1878,8 +2605,14 @@ bool updateAutoPickTravel(float dt,bool rightGroup,uint8_t targetCount){
     stopRobot();
     return false;
   }
+  // The RED field is slightly inclined along robot X. Apply a small uphill
+  // feed-forward only on the initial lateral leg to A. H1/H2 remains the
+  // primary closed-loop correction after the blind-distance gate opens.
+  const float startToAUphillBias=
+      state==DI_SANG_TRAI_A&&selectedField==FIELD_RED
+          ?RED_START_TO_A_UPHILL_BIAS_MM_S:0.0f;
   if(!firstLateralGuidanceReady()){
-    setRobotVelocity(0.0f,
+    setRobotVelocity(startToAUphillBias,
                      selectedFieldLateralSign()*MOVE_LEFT_SPEED_MM_S,
                      headingControlLateral(dt));
     return false;
@@ -1896,17 +2629,23 @@ bool updateAutoPickTravel(float dt,bool rightGroup,uint8_t targetCount){
   const float yawError=fabsf(shortestAngleError(targetYawDeg,currentYawDeg));
   const bool headingSafe=bnoValid&&yawError<=LATERAL_LINE_COUNT_MAX_YAW_ERROR_DEG;
   const bool onLine=activeForCount>=1&&headingSafe;
-  const bool approachingTarget=onLine&&!counter.latched&&
-                               counter.count+1>=targetCount;
+  const bool approachingTargetRaw=onLine&&!counter.latched&&
+                                  counter.count+1>=targetCount;
   counter.update(onLine,PICK_LINE_CONFIRM_MS,PICK_LINE_CLEAR_MS);
 
   const float pointATravelMm=fabsf(pose.y_mm-firstLateralStartedYmm);
   const float pointASearchMinMm=max(
       0.0f,POINT_A_EXPECTED_LATERAL_MM-POINT_A_SEARCH_HALF_RANGE_MM);
   const float pointASearchMaxMm=
-      POINT_A_EXPECTED_LATERAL_MM+POINT_A_SEARCH_HALF_RANGE_MM;
+      POINT_A_EXPECTED_LATERAL_MM+POINT_A_SEARCH_HALF_RANGE_MM+
+      POINT_A_SEARCH_FORWARD_EXTENSION_MM;
   const bool pointAEncoderGate=
       pointATravelMm>=pointASearchMinMm&&pointATravelMm<=pointASearchMaxMm;
+  // A line pulse before the measured A search window must not reduce travel
+  // speed. It may still be counted, but only becomes a slow-approach request
+  // after the encoder gate opens near the real station.
+  const bool approachingTarget=approachingTargetRaw&&
+      (state!=DI_SANG_TRAI_A||pointAEncoderGate);
   if(state==DI_SANG_TRAI_A&&pointAEncoderGate&&
      (approachingTarget||counter.count>=targetCount))
     pointATargetPairTracking=true;
@@ -1946,9 +2685,13 @@ bool updateAutoPickTravel(float dt,bool rightGroup,uint8_t targetCount){
     }
   }
   if(!headingSafe)travelSpeed*=LATERAL_HEADING_RECOVERY_SPEED_FACTOR;
-  const float holdVx = state==DI_SANG_TRAI_A ? 0.0f :
-                       lateralLineHoldVelocity(dt);
-  setRobotVelocity(holdVx,
+  const float holdVx=H1_H2_TRAVEL_HOLD_ENABLED
+      ?lateralTravelHoldVelocity(dt):0.0f;
+  const float compensatedVx=constrain(
+      holdVx+startToAUphillBias,
+      -LATERAL_X_HOLD_MAX_SPEED_MM_S,
+       LATERAL_X_HOLD_MAX_SPEED_MM_S);
+  setRobotVelocity(compensatedVx,
                    travelDirectionSign*travelSpeed,
                    headingControlLateral(dt));
   // Point A is accepted only by the sensor/encoder condition above.
@@ -1960,30 +2703,31 @@ bool updateAutoPickTravel(float dt,bool rightGroup,uint8_t targetCount){
 bool updateAutoPickX(float dt,bool rightGroup){
   const uint8_t offset=rightGroup?3:0;
   const uint8_t active=stopGroupActiveCount(offset);
-  const bool centerOnLine=stopLine.normalized[offset+1]>=LINE_ACTIVE_NORMALIZED;
 
   if(state==BU_TAM_A){
-    const bool outsideOnLine=
-        stopLine.normalized[offset]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
-    const bool insideOnLine=
-        stopLine.normalized[offset+2]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
-    const bool sidePairOnLine=centerOnLine&&insideOnLine;
-    const bool tailOnLine=
-        stopLine.holdNormalized[0]>=LATERAL_HOLD_LINE_THRESHOLD;
-    const bool frontOnLine=
-        stopLine.holdNormalized[1]>=LATERAL_HOLD_LINE_THRESHOLD;
+    const bool outsideOnLine=stationStopSensorOnLine(
+        offset,POINT_A_RIGHT_SENSOR_THRESHOLD);
+    const bool stationCenterOnLine=stationStopSensorOnLine(
+        offset+1,POINT_A_RIGHT_SENSOR_THRESHOLD);
+    const bool insideOnLine=stationStopSensorOnLine(
+        offset+2,POINT_A_RIGHT_SENSOR_THRESHOLD);
+    const bool sidePairOnLine=stationCenterOnLine&&insideOnLine;
+    const bool tailOnLine=stationHoldSensorOnLine(0);
+    const bool frontOnLine=stationHoldSensorOnLine(1);
 
     if(sidePairOnLine&&!pointASidePairLocked){
       pointASidePairLocked=true;
       pointAHSearchCenterXmm=pose.x_mm;
-      pointAHSearchDirectionSign=1;
+      pointAHSearchDirectionSign=preferredPointHSearchDirectionSign();
       resetLateralLineHold();
-      Serial.println("ACK,AUTO_POINT_A_SIDE_PAIR_LOCKED_START_H1_H2_SEARCH");
+      Serial.print("ACK,AUTO_POINT_A_SIDE_PAIR_LOCKED_START_H1_H2_SEARCH,FIRST,");
+      Serial.println(pointAHSearchDirectionSign>0?"FORWARD":"REVERSE");
     }
 
     if(pointARequiredSensorsOnLine(rightGroup)){
+      resetStationAlignmentShaping(false);
       if(!autoXStableSince)autoXStableSince=millis();
-      setRobotVelocity(0.0f,0.0f,headingControlFine(dt));
+      setRobotVelocity(0.0f,0.0f,headingControlStationary(dt));
       if(millis()-autoXStableSince>=X_ALIGN_STABLE_TIME_MS){
         xAligned=true;
         stopRobot();
@@ -1997,10 +2741,11 @@ bool updateAutoPickX(float dt,bool rightGroup){
     if(!sidePairOnLine){
       // After passing the line, reverse slowly until middle+inside are on black.
       float vy=-pointAPassDirectionSign*POINT_A_RIGHT_ALIGN_SPEED_MM_S;
-      if(!centerOnLine&&insideOnLine)
+      if(!stationCenterOnLine&&insideOnLine)
         vy=pointAPassDirectionSign*POINT_A_RIGHT_ALIGN_SPEED_MM_S;
-      else if(outsideOnLine||centerOnLine)
+      else if(outsideOnLine||stationCenterOnLine)
         vy=-pointAPassDirectionSign*POINT_A_RIGHT_ALIGN_SPEED_MM_S;
+      vy=stationAlignmentPulsedVelocity(vy,STATION_PULSE_AXIS_Y);
       setRobotVelocity(0.0f,vy,headingControlLateral(dt));
       return false;
     }
@@ -2021,13 +2766,50 @@ bool updateAutoPickX(float dt,bool rightGroup){
       holdVx=-POINT_A_H_SEARCH_SPEED_MM_S;
     else if(searchOffsetX<=-POINT_A_H_SEARCH_RADIUS_MM&&holdVx<0.0f)
       holdVx=POINT_A_H_SEARCH_SPEED_MM_S;
+    holdVx=stationAlignmentPulsedVelocity(holdVx,STATION_PULSE_AXIS_X);
     setRobotVelocity(holdVx,0.0f,headingControlLateral(dt));
     return false;
   }
 
-  // Point B requires the 0 and +1000 eyes simultaneously on black.
-  const bool requiredPairOnLineB=pointBRequiredSensorsOnLine(rightGroup);
+  const bool tha2BAlignment=state==CAN_LINE_DOC_PHAI_THA2B;
+  const bool postBridgeAlignment=state==CAN_PHAI_LINE_B_E18||
+      state==TIEN_E18_70||tha2BAlignment;
+  // Point B keeps middle+inside. Only the post-bridge route switches to
+  // outside+middle for the larger official field.
+  const bool requiredPairOnLineB=postBridgeAlignment
+      ?postBridgeOuterPairOnLine(rightGroup)
+      :pointBRequiredSensorsOnLine(rightGroup);
+
+  // At competition point B the side pair alone is not enough. Hold that pair
+  // on its vertical line, then search along X until both H1/H2 are also black.
+  // Post-bridge alignment intentionally keeps its independent outer-pair rule.
+  const bool stationNeedsH1H2 =
+      state==BU_TAM_B || state==CAN_B || state==BACKUP_C_ALIGN;
+  if(stationNeedsH1H2&&requiredPairOnLineB&&!h1H2BothOnLine()){
+    autoXStableSince=0;
+    const bool tailOnLine=stationHoldSensorOnLine(0);
+    const bool frontOnLine=stationHoldSensorOnLine(1);
+    const float searchOffsetX=pose.x_mm-pointAHSearchCenterXmm;
+    float holdVx=0.0f;
+    if(tailOnLine||frontOnLine){
+      holdVx=lateralLineHoldVelocity(dt);
+    }else{
+      if(searchOffsetX>=POINT_A_H_SEARCH_RADIUS_MM)
+        pointAHSearchDirectionSign=-1;
+      else if(searchOffsetX<=-POINT_A_H_SEARCH_RADIUS_MM)
+        pointAHSearchDirectionSign=1;
+      holdVx=pointAHSearchDirectionSign*POINT_A_H_SEARCH_SPEED_MM_S;
+    }
+    if(searchOffsetX>=POINT_A_H_SEARCH_RADIUS_MM&&holdVx>0.0f)
+      holdVx=-POINT_A_H_SEARCH_SPEED_MM_S;
+    else if(searchOffsetX<=-POINT_A_H_SEARCH_RADIUS_MM&&holdVx<0.0f)
+      holdVx=POINT_A_H_SEARCH_SPEED_MM_S;
+    holdVx=stationAlignmentPulsedVelocity(holdVx,STATION_PULSE_AXIS_X);
+    setRobotVelocity(holdVx,0.0f,headingControlLateral(dt));
+    return false;
+  }
   if(requiredPairOnLineB){
+    if(stationNeedsH1H2)resetStationAlignmentShaping(false);
     if(!autoXStableSince)autoXStableSince=millis();
     setRobotVelocity(0.0f,0.0f,headingControlStationary(dt));
     const uint32_t pairStableMs=state==CAN_LINE_DOC_PHAI_THA2B
@@ -2039,11 +2821,12 @@ bool updateAutoPickX(float dt,bool rightGroup){
   }
   autoXStableSince=0;
 
-  const bool tha2BAlignment=state==CAN_LINE_DOC_PHAI_THA2B;
-  const bool postBridgeAlignment=state==CAN_PHAI_LINE_B_E18||tha2BAlignment;
-  const float searchSpeed=tha2BAlignment?THA2B_PAIR_SEARCH_SPEED_MM_S:
-      (postBridgeAlignment?POST_BRIDGE_E18_ALIGN_MIN_SPEED_MM_S:
-                           X_ALIGN_SEARCH_SPEED_MM_S);
+  const bool backupCAlignment=state==BACKUP_C_ALIGN;
+  const float searchSpeed=backupCAlignment
+      ?selectedBackupCProfileConst().searchSpeedMmS
+      :(tha2BAlignment?THA2B_PAIR_SEARCH_SPEED_MM_S:
+        (postBridgeAlignment?POST_BRIDGE_E18_ALIGN_MIN_SPEED_MM_S:
+                             X_ALIGN_SEARCH_SPEED_MM_S));
   const float alignMinSpeed=tha2BAlignment?THA2B_PAIR_ALIGN_MIN_SPEED_MM_S:
       (postBridgeAlignment?POST_BRIDGE_E18_ALIGN_MIN_SPEED_MM_S:
                            X_ALIGN_MIN_SPEED_MM_S);
@@ -2051,32 +2834,46 @@ bool updateAutoPickX(float dt,bool rightGroup){
       (postBridgeAlignment?POST_BRIDGE_E18_ALIGN_MAX_SPEED_MM_S:
                            X_ALIGN_MAX_SPEED_MM_S);
   float vy=pointBSearchDirectionSign*searchSpeed;
-  if(active){
-    const float position=rightGroup?stopLine.rightPosition:stopLine.leftPosition;
+  const bool stationPairVisible=stationNeedsH1H2&&(
+      stationStopSensorOnLine(offset,LINE_ACTIVE_NORMALIZED)||
+      stationStopSensorOnLine(offset+1,LINE_ACTIVE_NORMALIZED)||
+      stationStopSensorOnLine(offset+2,LINE_ACTIVE_NORMALIZED));
+  const bool selectedPairVisible=postBridgeAlignment
+      ?postBridgeOuterPairVisible(rightGroup)
+      :(stationNeedsH1H2?stationPairVisible:active>0);
+  if(selectedPairVisible){
+    const float targetPosition=postBridgeAlignment
+        ?POST_BRIDGE_OUTER_PAIR_TARGET_POSITION
+        :POINT_B_PAIR_TARGET_POSITION;
+    const float position=postBridgeAlignment
+        ?postBridgeOuterPairPosition(rightGroup)
+        :(rightGroup?stopLine.rightPosition:stopLine.leftPosition);
     PID &pid=rightGroup?rightLinePid:leftLinePid;
     const int8_t controlSign = rightGroup ? RIGHT_STOP_CONTROL_SIGN
                                           : LEFT_STOP_CONTROL_SIGN;
-    const float signedError=controlSign*(POINT_B_PAIR_TARGET_POSITION-position);
-    vy=controlSign*pid.updateError(POINT_B_PAIR_TARGET_POSITION-position,dt,
-                                   -alignMaxSpeed,alignMaxSpeed);
+    const float signedError=controlSign*(targetPosition-position);
+    vy=controlSign*pid.updateError(targetPosition-position,dt,                                   -alignMaxSpeed,alignMaxSpeed);
     if(alignMinSpeed>0.0f&&fabsf(vy)<alignMinSpeed)
       vy=copysignf(alignMinSpeed,fabsf(vy)>0.01f?vy:signedError);
   }else{
     const float searchOffsetY=pose.y_mm-pointBSearchCenterYmm;
-    const int8_t routeSign=state==CAN_LINE_DOC_PHAI_THA2B
-        ?-1:selectedFieldLateralSign();
-    if(searchOffsetY>=POINT_B_PAIR_SEARCH_RADIUS_MM)
-      pointBSearchDirectionSign=-routeSign;
-    else if(searchOffsetY<=-POINT_B_PAIR_SEARCH_RADIUS_MM)
-      pointBSearchDirectionSign=routeSign;
+    const float searchRadius=backupCAlignment
+        ?selectedBackupCProfileConst().searchRadiusMm
+        :POINT_B_PAIR_SEARCH_RADIUS_MM;
+    if(searchOffsetY>=searchRadius)
+      pointBSearchDirectionSign=-1;
+    else if(searchOffsetY<=-searchRadius)
+      pointBSearchDirectionSign=1;
     vy=pointBSearchDirectionSign*searchSpeed;
   }
+  if(stationNeedsH1H2)
+    vy=stationAlignmentPulsedVelocity(vy,STATION_PULSE_AXIS_Y);
   setRobotVelocity(0,vy,headingControlStationary(dt));
   return false;
 }
 
 bool pointBPairLostBeyondGrace(bool rightGroup){
-  if(pointBRequiredSensorsOnLine(rightGroup)){
+  if(pointBStationRequiredSensorsOnLine(rightGroup)){
     pointBPairLostSinceMs=0;
     return false;
   }
@@ -2085,29 +2882,41 @@ bool pointBPairLostBeyondGrace(bool rightGroup){
 }
 
 bool tha2BHorizontalMarkerPresent(){
-  const bool leftGroupOnHorizontal=
-      stopGroupActiveCount(0)>=THA2B_LEFT_MARKER_MIN_ACTIVE;
-  const bool rightPairOnVertical=pointBRequiredSensorsOnLine(true);
-  const bool rightOutsideOnHorizontal=
-      stopLine.normalized[3]>=LINE_ACTIVE_NORMALIZED;
-  return leftGroupOnHorizontal&&rightPairOnVertical&&rightOutsideOnHorizontal;
+  const bool primaryRight=tha2BUsesRightStopGroup();
+  const uint8_t primaryOffset=primaryRight?3:0;
+  const bool oppositeOuterPairOnHorizontal=
+      postBridgeOuterPairOnLine(!primaryRight);
+  const bool primaryOuterPairOnIntersection=
+      postBridgeOuterPairOnLine(primaryRight);
+  const bool primaryInsideOnHorizontal=
+      stopLine.normalized[primaryOffset+2]>=LINE_ACTIVE_NORMALIZED;
+  return oppositeOuterPairOnHorizontal&&primaryOuterPairOnIntersection&&
+         primaryInsideOnHorizontal;
 }
 
 bool tha2BHorizontalMarkerCleared(){
-  const bool leftGroupClear=
-      stopGroupActiveCount(0)<THA2B_LEFT_MARKER_MIN_ACTIVE;
-  const bool rightOutsideClear=
-      stopLine.normalized[3]<LINE_ACTIVE_NORMALIZED;
-  return leftGroupClear&&rightOutsideClear;
+  // Stop only after both eyes of the opposite horizontal reference and the
+  // primary inside eye have left black. BLUE swaps the two physical groups.
+  const bool primaryRight=tha2BUsesRightStopGroup();
+  const uint8_t primaryOffset=primaryRight?3:0;
+  const uint8_t oppositeOffset=primaryRight?0:3;
+  const bool oppositeOutsideClear=
+      stopLine.normalized[oppositeOffset]<LINE_ACTIVE_NORMALIZED;
+  const bool oppositeMiddleClear=
+      stopLine.normalized[oppositeOffset+1]<LINE_ACTIVE_NORMALIZED;
+  const bool primaryInsideClear=
+      stopLine.normalized[primaryOffset+2]<LINE_ACTIVE_NORMALIZED;
+  return oppositeOutsideClear&&oppositeMiddleClear&&primaryInsideClear;
 }
 
-bool updateReverseKeepingRightPair(float dt,float reverseSpeed){
-  const uint8_t offset=3;
+bool updateReverseKeepingTha2BOuterPair(float dt,float reverseSpeed){
+  const bool primaryRight=tha2BUsesRightStopGroup();
+  const uint8_t offset=primaryRight?3:0;
+  const bool outsideOnLine=
+      stopLine.normalized[offset]>=LINE_ACTIVE_NORMALIZED;
   const bool middleOnLine=
       stopLine.normalized[offset+1]>=LINE_ACTIVE_NORMALIZED;
-  const bool insideOnLine=
-      stopLine.normalized[offset+2]>=LINE_ACTIVE_NORMALIZED;
-  if(middleOnLine||insideOnLine){
+  if(outsideOnLine||middleOnLine){
     pointBPairLostSinceMs=0;
   }else{
     if(!pointBPairLostSinceMs)pointBPairLostSinceMs=millis();
@@ -2118,31 +2927,29 @@ bool updateReverseKeepingRightPair(float dt,float reverseSpeed){
     }
   }
 
-  const float middleStrength=stopLine.normalized[offset+1];
-  const float insideStrength=stopLine.normalized[offset+2];
-  const float pairStrength=middleStrength+insideStrength;
-  const float linePosition=pairStrength>1.0f
-      ?1000.0f*insideStrength/pairStrength
-      :POINT_B_PAIR_TARGET_POSITION;
-  const float vy=RIGHT_STOP_CONTROL_SIGN*rightLinePid.updateError(
-      POINT_B_PAIR_TARGET_POSITION-linePosition,dt,
+  const float linePosition=postBridgeOuterPairPosition(primaryRight);
+  PID &pid=primaryRight?rightLinePid:leftLinePid;
+  const int8_t controlSign=primaryRight?RIGHT_STOP_CONTROL_SIGN:
+                                         LEFT_STOP_CONTROL_SIGN;
+  const float vy=controlSign*pid.updateError(
+      POST_BRIDGE_OUTER_PAIR_TARGET_POSITION-linePosition,dt,
       -X_ALIGN_MAX_SPEED_MM_S,X_ALIGN_MAX_SPEED_MM_S);
   setRobotVelocity(-fabsf(reverseSpeed),vy,headingControlFine(dt));
   return true;
 }
 
-bool updateForwardKeepingPointBPair(float dt,bool rightGroup){
+bool updateForwardKeepingPostBridgeOuterPair(float dt,bool rightGroup){
   if(!moveCommand.active)return true;
 
   const uint8_t offset=rightGroup?3:0;
+  const bool outsideOnLine=
+      stopLine.normalized[offset]>=LINE_ACTIVE_NORMALIZED;
   const bool middleOnLine=
       stopLine.normalized[offset+1]>=LINE_ACTIVE_NORMALIZED;
-  const bool insideOnLine=
-      stopLine.normalized[offset+2]>=LINE_ACTIVE_NORMALIZED;
   // One eye leaving black supplies the correction direction; do not cancel
   // forward travel for that normal tracking condition. Pause only if both
   // eyes are absent continuously, which rejects a single noisy ADC sample.
-  if(middleOnLine||insideOnLine){
+  if(outsideOnLine||middleOnLine){
     pointBPairLostSinceMs=0;
   }else{
     if(!pointBPairLostSinceMs)pointBPairLostSinceMs=millis();
@@ -2150,12 +2957,11 @@ bool updateForwardKeepingPointBPair(float dt,bool rightGroup){
        POST_BRIDGE_FORWARD_PAIR_LOST_CONFIRM_MS)xAligned=false;
   }
   if(!xAligned){
-    // Pause X immediately and reuse point B's search/PID until both the
-    // middle (0) and inside (+1000) eyes are stable on black again.
+    // Pause X immediately and use the post-bridge outside+middle pair search.
     if(updateAutoPickX(dt,rightGroup)){
       xAligned=true;pointBPairLostSinceMs=0;
       rightLinePid.reset();leftLinePid.reset();
-      Serial.println("ACK,AUTO_FORWARD_LINE_PAIR_REACQUIRED");
+      Serial.println("ACK,AUTO_FORWARD_OUTER_PAIR_REACQUIRED");
     }
     return false;
   }
@@ -2177,17 +2983,12 @@ bool updateForwardKeepingPointBPair(float dt,bool rightGroup){
   const float minimumVx=min(moveCommand.maxSpeed,
                             POST_BRIDGE_E18_FORWARD_MIN_SPEED_MM_S);
   if(fabsf(vx)<minimumVx)vx=copysignf(minimumVx,errorX);
-  const float middleStrength=stopLine.normalized[offset+1];
-  const float insideStrength=stopLine.normalized[offset+2];
-  const float pairStrength=middleStrength+insideStrength;
-  const float linePosition=pairStrength>1.0f
-      ? 1000.0f*insideStrength/pairStrength
-      : POINT_B_PAIR_TARGET_POSITION;
+  const float linePosition=postBridgeOuterPairPosition(rightGroup);
   PID &pid=rightGroup?rightLinePid:leftLinePid;
   const int8_t controlSign=rightGroup?RIGHT_STOP_CONTROL_SIGN:
                                         LEFT_STOP_CONTROL_SIGN;
   const float vy=controlSign*pid.updateError(
-      POINT_B_PAIR_TARGET_POSITION-linePosition,dt,
+      POST_BRIDGE_OUTER_PAIR_TARGET_POSITION-linePosition,dt,
       -X_ALIGN_MAX_SPEED_MM_S,X_ALIGN_MAX_SPEED_MM_S);
   setRobotVelocity(vx,vy,headingControlFine(dt));
   return false;
@@ -2216,6 +3017,8 @@ void reportStationLineInfo(const char *point,bool rightGroup) {
   for(uint8_t i=0;i<3;i++){
     Serial.print(',');Serial.print(stopLine.normalized[offset+i]);
   }
+  Serial.print(",H1,");Serial.print(stopLine.holdNormalized[0]);
+  Serial.print(",H2,");Serial.print(stopLine.holdNormalized[1]);
   Serial.println();
 }
 
@@ -2253,6 +3056,17 @@ uint32_t espCommandSentMs=0;
 
 bool isMechanismReplyForBuzzer(const char *line) {
   if(!line||!*line)return false;
+  // Startup discovery and FIELD synchronization are background traffic, not
+  // completed mechanism commands. Beeping for every one of these frames made
+  // the buzzer sound continuously whenever ESP32 booted or FIELD retried.
+  if(strncmp(line,"ACK,UART2,",10)==0||
+     strncmp(line,"ACK,HOME_SWITCHES,",18)==0||
+     strncmp(line,"ACK,LOCAL_BUTTONS,",18)==0||
+     strncmp(line,"ACK,E18_INPUTS,",15)==0||
+     strncmp(line,"ACK,RGB_FIELD_LED,",18)==0||
+     strncmp(line,"ACK,FIELD,",10)==0||
+     strncmp(line,"ACK,PCF8574,",12)==0||
+     strcmp(line,"ERR,BUSY,FIELD_CHANGE")==0)return false;
   return strcmp(line,"DONE_THA2A")==0 ||
          strncmp(line,"DONE",4)==0 ||
          strncmp(line,"ACK,",4)==0 ||
@@ -2263,6 +3077,11 @@ bool isMechanismReplyForBuzzer(const char *line) {
 
 void sendMechanismFrame(const char *command,bool announce=true) {
   if(!command||!*command)return;
+#if ROBOCON_AFTER_BRIDGE_TEST_CHASSIS_ONLY
+  Serial.print("ACK,AFTER_BRIDGE_TEST_CHASSIS_ONLY_BLOCKED_ESP_TX,");
+  Serial.println(command);
+  return;
+#endif
   mechanismClient.send(command);
   if(!announce)return;
   // The dashboard refreshes an unchanged JOG command for its watchdog. Beep
@@ -2319,6 +3138,102 @@ void printAutoStartConfiguration(const char *source) {
   Serial.print("SAFETY,AUTO_CONFIG,");Serial.print(source);Serial.print(',');
   Serial.print(selectedField==FIELD_BLUE?"BLUE":"RED");Serial.print(',');
   Serial.println(autoMechanismModeName());
+  Serial.print("SAFETY,AUTO_ROUTE,LATERAL_SIGN,");
+  Serial.print(selectedFieldLateralSign());
+  Serial.print(",MODE,");Serial.print(backupCRouteEnabled()?"C":"AB");
+  Serial.print(",START_FORWARD_MM,");
+  Serial.print(selectedStartEncoderDistanceMm(),1);
+  if(backupCRouteEnabled()){
+    const BackupRoute::MapProfile &profile=selectedBackupCProfileConst();
+    Serial.print(",C_LATERAL_MM,");Serial.print(profile.lateralDistanceMm,1);
+    Serial.print(",C_GROUP,");Serial.print(profile.useRightGroup?"RIGHT":"LEFT");
+    Serial.print(",C_EXIT_MM,");Serial.print(profile.exitDistanceMm,1);
+  }
+  Serial.print(",POINT_A_GROUP,");
+  Serial.print(selectedFieldUsesRightStopGroup()?"RIGHT":"LEFT");
+  Serial.print(",POINT_B_GROUP,");
+  Serial.print(secondPickUsesRightStopGroup()?"RIGHT":"LEFT");
+  Serial.print(",THA2B_GROUP,");
+  Serial.println(tha2BUsesRightStopGroup()?"RIGHT":"LEFT");
+}
+
+void sendBridgeBResumeRequest() {
+  if(bridgeBResumeAttempts>=BRIDGE_B_RESUME_MAX_ATTEMPTS)return;
+  sendMechanismFrame("BRIDGE_STABLE");
+  ++bridgeBResumeAttempts;
+  lastBridgeBResumeSendMs=millis();
+  Serial.print("ACK,AUTO_TX_BRIDGE_STABLE,ATTEMPT,");
+  Serial.println(bridgeBResumeAttempts);
+}
+
+void beginBridgeBResumeHandshake() {
+#if ROBOCON_AFTER_BRIDGE_TEST_CHASSIS_ONLY
+  bridgeBResumeRequested=true;
+  bridgeBResumeAccepted=true;
+  bridgeBResumeDone=true;
+  Serial.println("ACK,AFTER_BRIDGE_TEST_BRIDGE_B_HANDSHAKE_BYPASSED");
+#else
+  if(bridgeBResumeRequested)return;
+  bridgeBResumeRequested=true;
+  bridgeBResumeAccepted=false;
+  bridgeBResumeDone=false;
+  bridgeBResumeAttempts=0;
+  bridgeBResumeStartedMs=millis();
+  lastBridgeBResumeSendMs=0;
+  sendBridgeBResumeRequest();
+#endif
+}
+
+void updateBridgeBResumeHandshake() {
+  if(!bridgeBResumeRequested||bridgeBResumeDone||!ESP32_UART_ENABLED)return;
+  const uint32_t now=millis();
+  if(now-bridgeBResumeStartedMs>=BRIDGE_B_RESUME_TOTAL_TIMEOUT_MS||
+     bridgeBResumeAttempts>=BRIDGE_B_RESUME_MAX_ATTEMPTS){
+    setFault(FAULT_ESP_TIMEOUT,"DONE_BRIDGE_B_TIMEOUT");
+    return;
+  }
+  const uint32_t retryMs=bridgeBResumeAccepted
+      ?BRIDGE_B_RESUME_DONE_RETRY_MS:BRIDGE_B_RESUME_START_RETRY_MS;
+  if(now-lastBridgeBResumeSendMs>=retryMs)sendBridgeBResumeRequest();
+}
+
+const char *selectedFieldName() {
+  return selectedField==FIELD_BLUE?"BLUE":"RED";
+}
+
+void sendEspFieldSyncRequest() {
+  if(!ESP32_UART_ENABLED)return;
+  char command[16];
+  snprintf(command,sizeof(command),"FIELD,%s",selectedFieldName());
+  // Automatic retries are silent. Physical map selection already has its own
+  // 2/3-beep indication and normal mechanism commands still beep as before.
+  sendMechanismFrame(command,false);
+  lastEspFieldSyncSendMs=millis();
+  ++espFieldSyncAttempts;
+  Serial.print("SAFETY,ESP_FIELD_SYNC_TX,");Serial.print(selectedFieldName());
+  Serial.print(",ATTEMPT,");Serial.println(espFieldSyncAttempts);
+}
+
+void beginEspFieldSync() {
+  espFieldSynced=false;
+  espFieldSyncAttempts=0;
+  lastEspFieldSyncSendMs=0;
+  sendEspFieldSyncRequest();
+}
+
+void updateEspFieldSync() {
+  if(espFieldSynced||!ESP32_UART_ENABLED)return;
+  if(lastEspFieldSyncSendMs==0||
+     millis()-lastEspFieldSyncSendMs>=ESP32_FIELD_SYNC_RETRY_MS)
+    sendEspFieldSyncRequest();
+}
+
+bool fieldReadyForAutoStart() {
+  if(espFieldSynced&&espConfirmedField==selectedField)return true;
+  if(lastEspFieldSyncSendMs==0)beginEspFieldSync();
+  Serial.print("ERR,AUTO_START_WAIT_ESP_FIELD,");
+  Serial.println(selectedFieldName());
+  return false;
 }
 
 void printAutoTelemetryMode() {
@@ -2362,6 +3277,10 @@ void printMechanismTelemetryStatus() {
 }
 
 void beginAutoMechanismAction(const char *command) {
+  if(!espFieldSynced||espConfirmedField!=selectedField){
+    setFault(FAULT_ESP_TIMEOUT,"ESP_FIELD_NOT_SYNCED");
+    return;
+  }
   strncpy(autoMechanismAction,command,sizeof(autoMechanismAction)-1);
   autoMechanismAction[sizeof(autoMechanismAction)-1]='\0';
   autoMechanismWaiting=true;
@@ -2399,6 +3318,9 @@ bool mechanismDoneMatchesActiveAction(const char *line) {
     return strcmp(line,"DONE_POINT_A")==0||strcmp(line,"DONE,PICK_A")==0||strcmp(line,"DONE,POINT_A")==0;
   if(strcmp(autoMechanismAction,"POINT_B")==0)
     return strcmp(line,"DONE_POINT_B")==0||strcmp(line,"DONE,PICK_B")==0||strcmp(line,"DONE,POINT_B")==0;
+  if(strcmp(autoMechanismAction,"POINT_C")==0)
+    return strcmp(line,"DONE_POINT_C")==0||strcmp(line,"DONE_C")==0||
+           strcmp(line,"DONE,PICK_C")==0||strcmp(line,"DONE,POINT_C")==0;
   if(strcmp(autoMechanismAction,"THA_2A")==0)
     return strcmp(line,"DONE_THA_2A")==0||strcmp(line,"DONE_THA2A")==0||strcmp(line,"DONE,THA2A")==0;
   if(strcmp(autoMechanismAction,"THA_2B")==0)
@@ -2409,12 +3331,40 @@ bool mechanismDoneMatchesActiveAction(const char *line) {
 void handleMechanismLine(const char *line, void *) {
   if(!line||!*line)return;
   if(isMechanismReplyForBuzzer(line))buzzer.beepFast(2);
+  if(strcmp(line,"BOOT,ESP32_MECHANISM,1")==0){
+    espFieldSynced=false;
+    lastEspFieldSyncSendMs=0;
+    Serial.println("SAFETY,ESP_FIELD_SYNC_LOST,ESP32_REBOOT");
+  }
+  if(strcmp(line,"ACK,FIELD,RED")==0||strcmp(line,"ACK,FIELD,BLUE")==0){
+    const FieldSide confirmed=
+        strcmp(line,"ACK,FIELD,BLUE")==0?FIELD_BLUE:FIELD_RED;
+    espConfirmedField=confirmed;
+    espFieldSynced=confirmed==selectedField;
+    if(espFieldSynced){
+      Serial.print("SAFETY,ESP_FIELD_SYNCED,");
+      Serial.println(selectedFieldName());
+    }else{
+      lastEspFieldSyncSendMs=0;
+      Serial.print("SAFETY,ESP_FIELD_MISMATCH,WANTED,");
+      Serial.print(selectedFieldName());Serial.print(",GOT,");
+      Serial.println(confirmed==FIELD_BLUE?"BLUE":"RED");
+    }
+  }
   if(strcmp(line,"DONE_THA_2A")==0||strcmp(line,"DONE_THA2A")==0){
     espDoneTha2A=true;
     Serial.println("ACK,AUTO_RX_DONE_THA2A");
   }else if(strcmp(line,"DONE_THA_2B")==0||strcmp(line,"DONE_THA2B")==0){
     espDoneTha2B=true;
     Serial.println("ACK,AUTO_RX_DONE_THA2B");
+  }else if(strcmp(line,"ACK,STARTED,BRIDGE_B")==0){
+    bridgeBResumeAccepted=true;
+    lastBridgeBResumeSendMs=millis();
+    Serial.println("ACK,AUTO_RX_BRIDGE_B_STARTED");
+  }else if(strcmp(line,"DONE_BRIDGE_B")==0){
+    bridgeBResumeAccepted=true;
+    bridgeBResumeDone=true;
+    Serial.println("ACK,AUTO_RX_DONE_BRIDGE_B");
   }
   if(strcmp(line,"EVENT,E18_BOTH")==0||
      strcmp(line,"EVENT,E18_BOTH,1")==0){
@@ -2483,7 +3433,15 @@ void sendTunerConfig() {
     Serial.print("CFG,WHEEL,");Serial.print(tunerWheelName(i));Serial.print(',');
     Serial.print(wheels[i].pid.kp,6);Serial.print(',');Serial.print(wheels[i].pid.ki,6);
     Serial.print(',');Serial.print(wheels[i].pid.kd,6);Serial.print(',');
-    Serial.print(wheels[i].kff,6);Serial.print(',');Serial.println(wheels[i].deadzone);
+    // Keep the legacy CFG,WHEEL shape for the current dashboard, then expose
+    // the complete direction-specific calibration on a separate record.
+    Serial.print(wheels[i].kffPositive,6);Serial.print(',');
+    Serial.println(wheels[i].deadzonePositive);
+    Serial.print("CFG,WHEEL_DIR,");Serial.print(tunerWheelName(i));Serial.print(',');
+    Serial.print(wheels[i].kffPositive,6);Serial.print(',');
+    Serial.print(wheels[i].kffNegative,6);Serial.print(',');
+    Serial.print(wheels[i].deadzonePositive);Serial.print(',');
+    Serial.println(wheels[i].deadzoneNegative);
   }
   Serial.print("CFG,HEADING,0,");Serial.print(headingPid.kp,6);Serial.print(',');
   Serial.print(headingPid.ki,6);Serial.print(',');Serial.println(headingPid.kd,6);
@@ -2510,7 +3468,117 @@ void enterPassiveTest(TestMode mode) {
   armed=false;moveCommand.active=false;stopRobot();transitionTo(WAIT_START);testMode=mode;
 }
 
+Stream &backupConfigReplyStream() {
+  return processingUsbCommand ? usbCommandStream()
+                              : static_cast<Stream &>(Serial);
+}
+
+void printBackupRouteMapConfig(Stream &out, const char *name,
+                               const BackupRoute::MapProfile &profile) {
+  out.print("C_CFG,");out.print(name);out.print(',');
+  out.print(profile.startForwardMm,1);out.print(',');
+  out.print(profile.lateralDistanceMm,1);out.print(',');
+  out.print(profile.lateralSpeedMmS,1);out.print(',');
+  out.print(profile.searchSpeedMmS,1);out.print(',');
+  out.print(profile.searchRadiusMm,1);out.print(',');
+  out.print(profile.exitDistanceMm,1);out.print(',');
+  out.println(profile.useRightGroup?"RIGHT":"LEFT");
+}
+
+void printBackupRouteConfig() {
+  Stream &out=backupConfigReplyStream();
+  out.print("C_CFG,META,");out.print(BackupRoute::CONFIG_VERSION);out.print(',');
+  out.print(backupRouteConfig.crc32);out.print(',');
+  out.print(backupCRouteEnabled()?"C":"AB");out.print(',');
+  out.print(backupRouteConfigLoadedFromEeprom?"EEPROM":"DEFAULT");out.print(',');
+  out.println(backupRouteConfigDirty?1:0);
+  printBackupRouteMapConfig(out,"RED",backupRouteConfig.red);
+  printBackupRouteMapConfig(out,"BLUE",backupRouteConfig.blue);
+  out.println("C_CFG_END");
+}
+
+bool backupConfigMayChange() {
+  if(armed||state!=WAIT_START){
+    backupConfigReplyStream().println("ERR,C_CONFIG,ROBOT_MUST_BE_IDLE");
+    return false;
+  }
+  return true;
+}
+
+bool processBackupRouteCommand(const char *line) {
+  if(strcmp(line,"GET_C_CONFIG")==0){
+    printBackupRouteConfig();
+    return true;
+  }
+  if(strncmp(line,"SET_C_ROUTE,",12)==0){
+    if(!backupConfigMayChange())return true;
+    const char *mode=line+12;
+    if(strcmp(mode,"AB")==0)
+      backupRouteConfig.routeMode=static_cast<uint8_t>(BackupRoute::RouteMode::MainAB);
+    else if(strcmp(mode,"C")==0)
+      backupRouteConfig.routeMode=static_cast<uint8_t>(BackupRoute::RouteMode::BackupC);
+    else{
+      backupConfigReplyStream().println("ERR,C_CONFIG,ROUTE_MUST_BE_AB_OR_C");
+      return true;
+    }
+    backupRouteConfig.crc32=BackupRoute::calculateCrc(backupRouteConfig);
+    backupRouteConfigDirty=true;
+    backupConfigReplyStream().println("ACK,C_CONFIG,ROUTE_RAM");
+    return true;
+  }
+  if(strncmp(line,"SET_C_MAP,",10)==0){
+    if(!backupConfigMayChange())return true;
+    char field[8]={};char group[8]={};
+    BackupRoute::MapProfile candidate{};
+    const int parsed=sscanf(line+10,"%7[^,],%f,%f,%f,%f,%f,%f,%7s",
+        field,&candidate.startForwardMm,&candidate.lateralDistanceMm,
+        &candidate.lateralSpeedMmS,&candidate.searchSpeedMmS,
+        &candidate.searchRadiusMm,&candidate.exitDistanceMm,group);
+    if(parsed!=8||(strcmp(field,"RED")!=0&&strcmp(field,"BLUE")!=0)||
+       (strcmp(group,"RIGHT")!=0&&strcmp(group,"LEFT")!=0)){
+      backupConfigReplyStream().println("ERR,C_CONFIG,MAP_FORMAT");
+      return true;
+    }
+    candidate.useRightGroup=strcmp(group,"RIGHT")==0?1:0;
+    memset(candidate.reserved,0,sizeof(candidate.reserved));
+    if(!BackupRoute::profileValid(candidate)){
+      backupConfigReplyStream().println("ERR,C_CONFIG,MAP_RANGE");
+      return true;
+    }
+    if(strcmp(field,"BLUE")==0)backupRouteConfig.blue=candidate;
+    else backupRouteConfig.red=candidate;
+    backupRouteConfig.crc32=BackupRoute::calculateCrc(backupRouteConfig);
+    backupRouteConfigDirty=true;
+    Stream &out=backupConfigReplyStream();
+    out.print("ACK,C_CONFIG,MAP_RAM,");out.println(field);
+    return true;
+  }
+  if(strcmp(line,"SAVE_C_CONFIG")==0){
+    if(!backupConfigMayChange())return true;
+    if(!BackupRoute::save(backupRouteConfig)){
+      backupConfigReplyStream().println("ERR,C_CONFIG,EEPROM_VERIFY");
+      return true;
+    }
+    backupRouteConfigLoadedFromEeprom=true;
+    backupRouteConfigDirty=false;
+    backupConfigReplyStream().println("ACK,C_CONFIG,SAVED_EEPROM");
+    printBackupRouteConfig();
+    return true;
+  }
+  if(strcmp(line,"RESTORE_C_DEFAULT")==0){
+    if(!backupConfigMayChange())return true;
+    BackupRoute::restoreDefaults(backupRouteConfig);
+    backupRouteConfigLoadedFromEeprom=false;
+    backupRouteConfigDirty=true;
+    backupConfigReplyStream().println("ACK,C_CONFIG,DEFAULTS_RAM");
+    printBackupRouteConfig();
+    return true;
+  }
+  return false;
+}
+
 void processCommand(const char *line) {
+  if(processBackupRouteCommand(line))return;
   if(strncmp(line,"MECH,",5)==0){
     if(!ESP32_UART_ENABLED){Serial.println("ERR,MECH_UART_DISABLED");return;}
     const char *command=line+5;
@@ -2595,6 +3663,8 @@ void processCommand(const char *line) {
   else if(strcmp(line,"FIELD,RED")==0||strcmp(line,"FIELD,BLUE")==0){
     if(armed){Serial.println("ERR,DISARM_BEFORE_FIELD_CHANGE");return;}
     selectedField=strcmp(line,"FIELD,BLUE")==0?FIELD_BLUE:FIELD_RED;
+    physicalStartPendingForFieldSync=false;
+    beginEspFieldSync();
     Serial.print("ACK,FIELD,");Serial.println(selectedField==FIELD_BLUE?"BLUE":"RED");
   }
   else if(strcmp(line,"AUTO_MECH,REAL")==0){
@@ -2647,16 +3717,19 @@ void processCommand(const char *line) {
     if(faultFlags!=FAULT_NONE){Serial.println("ERR,RESET_REQUIRED");return;}
     if(!competitionConfigurationValid()){
       Serial.println("ERR,AUTO_LOCKED: VERIFY_SIGNS_LINE_CALIBRATION_SENSOR_ORDER_AND_ESP_UART");return;}
+    if(!fieldReadyForAutoStart())return;
     supervisedAutoRun=false;testMode=TEST_NONE;armed=true;resetAllControllers();resetPose();
     competitionHeadingDeg=currentYawDeg;targetYawDeg=competitionHeadingDeg;
-#if ROBOCON_AFTER_BRIDGE_TEST_BUILD
+#if ROBOCON_AFTER_BRIDGE_TEST_BUILD || ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
     transitionTo(DI_LEN_DEM_LINE);
 #else
     transitionTo(DOI_HOME_A_READY);
 #endif
     printAutoStartConfiguration("UART5");
     Serial.println("SAFETY,AUTO_STARTED");
-#if ROBOCON_AFTER_BRIDGE_TEST_BUILD
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+    Serial.println("ACK,START_BRIDGE_LINE_1150_TEST");
+#elif ROBOCON_AFTER_BRIDGE_TEST_BUILD
     Serial.println("ACK,START_AFTER_BRIDGE_TEST");
 #else
     Serial.println("ACK,START");
@@ -2667,9 +3740,10 @@ void processCommand(const char *line) {
     if(faultFlags!=FAULT_NONE){Serial.println("ERR,RESET_REQUIRED");return;}
     if(!competitionConfigurationValid()){
       Serial.println("ERR,AUTO_LOCKED: VERIFY_SIGNS_LINE_CALIBRATION_SENSOR_ORDER_AND_ESP_UART");return;}
+    if(!fieldReadyForAutoStart())return;
     testMode=TEST_NONE;armed=true;resetAllControllers();resetPose();
     competitionHeadingDeg=currentYawDeg;targetYawDeg=competitionHeadingDeg;lastTunerHeartbeatMs=millis();supervisedAutoRun=true;
-#if ROBOCON_AFTER_BRIDGE_TEST_BUILD
+#if ROBOCON_AFTER_BRIDGE_TEST_BUILD || ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
     transitionTo(DI_LEN_DEM_LINE);
 #else
     transitionTo(DOI_HOME_A_READY);
@@ -2683,16 +3757,24 @@ void processCommand(const char *line) {
     if(!competitionConfigurationValid()){
       Serial.println("ERR,AUTO_LOCKED: VERIFY_SIGNS_LINE_CALIBRATION_SENSOR_ORDER_AND_ESP_UART");return;}
     if(!bnoValid){Serial.println("ERR,BNO085_NOT_VALID");return;}
+    if(!fieldReadyForAutoStart())return;
     testMode=TEST_NONE;armed=true;resetAllControllers();resetPose();
     targetYawDeg=currentYawDeg;lastTunerHeartbeatMs=millis();supervisedAutoRun=true;
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+    transitionTo(DI_LEN_DEM_LINE);
+    Serial.println("ACK,START_BRIDGE_LINE_1150_TEST");
+#else
     transitionTo(DI_SANG_C);Serial.println("ACK,START_BRIDGE_TEST");
+#endif
   }else if(strcmp(line,"ESTOP")==0){
     if(ESP32_UART_ENABLED)sendMechanismFrame("STOP");
+    physicalStartPendingForFieldSync=false;
     supervisedAutoRun=false;softwareEStopLatched=true;testMode=TEST_NONE;armed=false;moveCommand.active=false;
     stopRobot();transitionTo(WAIT_START);
     Serial.println("SAFETY,ESTOP,LATCHED");Serial.println("ACK,ESTOP,LATCHED");}
   else if(strcmp(line,"STOP")==0||strcmp(line,"DISARM")==0){
     if(autoMechanismWaiting&&ESP32_UART_ENABLED)sendMechanismFrame("STOP");
+    physicalStartPendingForFieldSync=false;
     autoMechanismWaiting=false;espDone=false;strcpy(autoMechanismAction,"NONE");
     supervisedAutoRun=false;testMode=TEST_NONE;armed=false;moveCommand.active=false;stopRobot();transitionTo(WAIT_START);
     Serial.println("SAFETY,DISARMED");Serial.println("ACK,DISARM");}
@@ -2746,7 +3828,7 @@ void processCommand(const char *line) {
     else Serial.println("ERR,TOF_DISABLED");}
   else if(strcmp(line,"STATUS")==0){
     if(controlMode==CONTROL_AUTO&&armed)requestAutoTelemetrySnapshot();
-    else lastTelemetryMs=0;
+    else{telemetryStage=0;lastTelemetryMs=0;lastTelemetryStageMs=0;}
   }
   else if(strcmp(line,"MANUAL,HEADING,ON")==0){
     if(controlMode!=CONTROL_MANUAL){Serial.println("ERR,MODE_MANUAL_REQUIRED");return;}
@@ -2889,19 +3971,43 @@ void processCommand(const char *line) {
        wheelIndex<WHEEL_COUNT&&kp>=0&&ki>=0&&kd>=0&&kff>=0&&deadzone>=0&&deadzone<PWM_MAX){
       WheelControl &wheel=wheels[wheelIndex];
       wheel.pid.kp=kp;wheel.pid.ki=ki;wheel.pid.kd=kd;
-      wheel.kff=kff;wheel.deadzone=deadzone;wheel.pid.reset();
+      wheel.kffPositive=kff;wheel.kffNegative=kff;
+      wheel.deadzonePositive=deadzone;wheel.deadzoneNegative=deadzone;
+      wheel.pid.reset();
       Serial.print("ACK,SET_PID,");Serial.println(wheelIndex);
     }else Serial.println("ERR,SET_PID_FORMAT: SET_PID,wheel(0-3),kp,ki,kd,kff,deadzone");
+  }
+  else if(strncmp(line,"SET_FF_DIR,",11)==0){
+    unsigned wheelIndex=0;float kffPositive=0,kffNegative=0;
+    int deadzonePositive=0,deadzoneNegative=0;
+    if(sscanf(line+11,"%u,%f,%f,%d,%d",&wheelIndex,&kffPositive,
+              &kffNegative,&deadzonePositive,&deadzoneNegative)==5&&
+       wheelIndex<WHEEL_COUNT&&kffPositive>=0&&kffPositive<=1.0f&&
+       kffNegative>=0&&kffNegative<=1.0f&&deadzonePositive>=0&&
+       deadzonePositive<PWM_MAX&&deadzoneNegative>=0&&
+       deadzoneNegative<PWM_MAX){
+      WheelControl &wheel=wheels[wheelIndex];
+      wheel.kffPositive=kffPositive;wheel.kffNegative=kffNegative;
+      wheel.deadzonePositive=deadzonePositive;
+      wheel.deadzoneNegative=deadzoneNegative;wheel.pid.reset();
+      Serial.print("ACK,SET_FF_DIR,");Serial.println(wheelIndex);
+    }else Serial.println("ERR,SET_FF_DIR_FORMAT: SET_FF_DIR,wheel,kff_pos,kff_neg,dz_pos,dz_neg");
   }
   else Serial.println("ERR,UNKNOWN_COMMAND");
 }
 
 void updateUsbCommands() {
   char line[256];
+  processingUsbCommand=false;
   while(telemetryReceiver.feed(Serial,line,sizeof(line)))processCommand(line);
+  // USB is normally a receive-only backup command path. Echoing every
+  // HEARTBEAT back to an unattended COM14 host can fill the CDC TX queue and
+  // stall command handling. Only GET/SET/SAVE_C_CONFIG replies are routed back
+  // to COM14 by processBackupRouteCommand().
   while(usbCableReceiver.feed(usbCommandStream(),line,sizeof(line))){
-    usbCommandStream().print("USB_RX,");usbCommandStream().println(line);
+    processingUsbCommand=true;
     processCommand(line);
+    processingUsbCommand=false;
   }
 }
 
@@ -3004,15 +4110,16 @@ uint32_t tha2BCoarseHitSinceMs=0;
 RobotPose bridgeAcquireStartPose;
 int8_t bridgeAcquireSearchDirectionSign=1;
 
-bool updateTha2BCoarseRightLineLatch(){
+bool updateTha2BCoarseLineLatch(){
   if(!moveCommand.active)return false;
   const float worldDx=pose.x_mm-moveCommand.start.x_mm;
   const float worldDy=pose.y_mm-moveCommand.start.y_mm;
   const float yaw=-moveCommand.start.yaw_deg*PI/180.0f;
   const float localY=sinf(yaw)*worldDx+cosf(yaw)*worldDy;
+  const uint8_t offset=tha2BUsesRightStopGroup()?3:0;
   const bool pairTouched=
-      stopLine.normalized[4]>=THA2B_COARSE_LINE_THRESHOLD||
-      stopLine.normalized[5]>=THA2B_COARSE_LINE_THRESHOLD;
+      stopLine.normalized[offset]>=THA2B_COARSE_LINE_THRESHOLD||
+      stopLine.normalized[offset+1]>=THA2B_COARSE_LINE_THRESHOLD;
 
   if(!tha2BCoarseLineArmed){
     tha2BCoarseHitSinceMs=0;
@@ -3041,21 +4148,42 @@ bool updateTha2BCoarseRightLineLatch(){
 }
 
 const char *stateName(AutoState s) {
-  static const char *names[]={"WAIT_START","START_MECHANISM_ASYNC","START_FORWARD_ENCODER_170MM","LEGACY_START_FORWARD","LEGACY_TOF_H1_H2",
+  static const char *names[]={"WAIT_START","START_MECHANISM_ASYNC","START_FORWARD_ENCODER","LEGACY_START_FORWARD","LEGACY_TOF_H1_H2",
   "MOVE_LEFT_PICK_1","ALIGN_X_PICK_1","ALIGN_Y_PICK_1","VERIFY_PICK_1",
   "WAIT_PICK_1_DONE","MOVE_LEFT_PICK_2","ALIGN_X_PICK_2","ALIGN_Y_PICK_2",
-  "VERIFY_PICK_2","WAIT_PICK_2_DONE","POST_B_LEFT_1300MM","UNUSED","UNUSED",
+  "VERIFY_PICK_2","WAIT_PICK_2_DONE","BACKUP_C_TRAVEL","BACKUP_C_ALIGN",
+  "BACKUP_C_VERIFY","BACKUP_C_WAIT_MECHANISM","BACKUP_C_EXIT_TO_BRIDGE",
+  "POST_B_TO_BRIDGE","UNUSED","UNUSED",
   "ACQUIRE_AND_CENTER_8_EYE_LINE","POINT_A_RIGHT_ALIGN","FOLLOW_LINE_UNTIL_END_MARKER","HOME_CENTER","HOME_DROP",
   "HOME_TO_B","TIEN_34CM_B","DOI_THA_2B","CHO_SAU_B","LUI_33CM_A","DOI_THA_2A",
-  "CHO_SAU_THA_A","LUI_3M","SANG_TRAI_1M5","POST_BRIDGE_RIGHT_190_ALIGN_B_E18",
-  "POST_BRIDGE_FORWARD_70MM","WAIT_DONE_THA2A","MOVE_RIGHT_400_BACK_200_THA2B","ALIGN_RIGHT_PAIR_VERTICAL_THA2B","REVERSE_FOLLOW_VERTICAL_THA2B","REVERSE_CLEAR_HORIZONTAL_THA2B","WAIT_DONE_THA2B","POST_THA2B_DIAGONAL_RIGHT_2000_REVERSE_3000","FINISH","FAULT_STOP"};
+  "CHO_SAU_THA_A","LUI_3M","RETURN_LATERAL","POST_BRIDGE_LATERAL_ALIGN_E18",
+  "POST_BRIDGE_FORWARD_WITH_LINE","WAIT_DONE_THA2A","MOVE_DIAGONAL_TO_THA2B","ALIGN_ROUTE_PAIR_VERTICAL_THA2B","REVERSE_FOLLOW_VERTICAL_THA2B","REVERSE_CLEAR_HORIZONTAL_THA2B","WAIT_DONE_THA2B","POST_THA2B_DIAGONAL_EXIT","FINISH","FAULT_STOP"};
   return names[static_cast<uint8_t>(s)];
 }
 
-void onExitState(AutoState) { resetAllControllers(); }
+bool isRollingBridgeTransition(AutoState current,AutoState next){
+  if(selectedField!=FIELD_BLUE)return false;
+  return (current==DI_SANG_C&&next==CHAY_LEN_XANH)||
+         (current==BACKUP_C_EXIT_TO_BRIDGE&&next==CHAY_LEN_XANH)||
+         (current==CHAY_LEN_XANH&&next==DI_LEN_DEM_LINE);
+}
+
+void onExitState(AutoState current,AutoState next) {
+  if(isRollingBridgeTransition(current,next)){
+    // Preserve wheel targets/PID torque across the bridge-entry handoff. Only
+    // discard the completed position loop when leaving the encoder segment.
+    if(current==DI_SANG_C||current==BACKUP_C_EXIT_TO_BRIDGE){
+      positionXPid.reset();
+      positionYPid.reset();
+      positionErrorX=positionErrorY=0.0f;
+    }
+    return;
+  }
+  resetAllControllers();
+}
 
 void transitionTo(AutoState next) {
-  onExitState(state);state=next;stateEntered=false;stateStartedMs=millis();
+  onExitState(state,next);state=next;stateEntered=false;stateStartedMs=millis();
   Serial.print("STATE,");Serial.println(stateName(state));
   if(state==FINISH)Serial.println("SAFETY,AUTO_COMPLETE");
 }
@@ -3066,6 +4194,9 @@ void onEnterState() {
     case WAIT_START:
       armed=false;stopRobot();autoMechanismWaiting=false;espDone=false;
       espDoneTha2A=false;espDoneTha2B=false;
+      bridgeBResumeRequested=false;bridgeBResumeAccepted=false;
+      bridgeBResumeDone=false;bridgeBResumeAttempts=0;
+      bridgeBResumeStartedMs=0;lastBridgeBResumeSendMs=0;
       strcpy(autoMechanismAction,"NONE");stateTimeoutMs=0;break;
     case DOI_HOME_A_READY:
       stopRobot();
@@ -3080,12 +4211,12 @@ void onEnterState() {
       tofAcceptanceEnabled=false;tofValid=false;tofSampleIndex=0;tofSampleCount=0;
       targetYawDeg=competitionHeadingDeg;
       headingPid.reset();fineHeadingPid.reset();
-      beginRelativeMove(START_ENCODER_DISTANCE_MM,0,START_ENCODER_SPEED_MM_S);
+      beginRelativeMove(selectedStartEncoderDistanceMm(),0,START_ENCODER_SPEED_MM_S);
       stateTimeoutMs=5000;break;
     case CAN_START_FAST:
       startHoldLineStableSince=0;
       headingPid.reset();
-      beginRelativeMove(START_ENCODER_DISTANCE_MM,0,START_ENCODER_SPEED_MM_S);
+      beginRelativeMove(selectedStartEncoderDistanceMm(),0,START_ENCODER_SPEED_MM_S);
       stateTimeoutMs=5000;break;
     case CAN_START_FINE:
       // We are now far enough from the wall to accept fresh VL53L3CX data.
@@ -3113,9 +4244,10 @@ void onEnterState() {
       rightAutoCounter.reset();leftAutoCounter.reset();stateTimeoutMs=15000;break;
     case BU_TAM_A:
       xAligned=false;autoXStableSince=0;rightLinePid.reset();leftLinePid.reset();
+      resetStationAlignmentShaping();
       pointASidePairLocked=false;
       pointAHSearchCenterXmm=pose.x_mm;
-      pointAHSearchDirectionSign=1;
+      pointAHSearchDirectionSign=preferredPointHSearchDirectionSign();
       resetLateralLineHold();
       stateTimeoutMs=POINT_A_H_SEARCH_TIMEOUT_MS;break;
     case CAN_YAW_A:
@@ -3126,9 +4258,8 @@ void onEnterState() {
     case DOI_GAP_A:
       // A mechanism wait must never inherit a final heading/line command.
       stopRobot();
-      // UART TX/RX tones are emitted centrally.
-      beginAutoMechanismAction("POINT_A");
-      Serial.println("SAFETY,AUTO_WAIT,POINT_A,ESP32_DONE");
+      stationMechanismCommandStarted=false;
+      stationCommandLineStableSinceMs=0;
       stateTimeoutMs=ESP32_REPLY_TIMEOUT_MS;break;
     case DI_SANG_TRAI_B:
       // Point A is the new encoder origin. Move the measured 200 mm toward B,
@@ -3145,8 +4276,12 @@ void onEnterState() {
       rightAutoCounter.reset();leftAutoCounter.reset();stateTimeoutMs=6000;break;
     case BU_TAM_B:
       xAligned=false;autoXStableSince=0;rightLinePid.reset();leftLinePid.reset();
+      resetStationAlignmentShaping();
       fineHeadingPid.reset();stationHeadingCommandWz=0.0f;
       pointBSearchCenterYmm=pose.y_mm;
+      pointAHSearchCenterXmm=pose.x_mm;
+      pointAHSearchDirectionSign=preferredPointHSearchDirectionSign();
+      resetLateralLineHold();
       pointBPairLostSinceMs=0;
       // The encoder leg can overshoot B. Search back toward A first, then
       // sweep both directions inside POINT_B_PAIR_SEARCH_RADIUS_MM.
@@ -3162,24 +4297,80 @@ void onEnterState() {
     case DOI_GAP_B:
       // Hold every motor at zero while REAL waits for DONE or SIM waits 4 s.
       stopRobot();
-      // UART TX/RX tones are emitted centrally.
-      beginAutoMechanismAction("POINT_B");
-      Serial.println("ACK,AUTO_POINT_B_VERIFIED_WAIT_ESP32_DONE");
+      stationMechanismCommandStarted=false;
+      stationCommandLineStableSinceMs=0;
       stateTimeoutMs=ESP32_REPLY_TIMEOUT_MS;break;
+    case BACKUP_C_TRAVEL:{
+      stopArrayCountingLocked=false;
+      resetPose(0.0f,0.0f,currentYawDeg);
+      targetYawDeg=competitionHeadingDeg;
+      resetLateralLineHold();
+      lateralHoldXMm=pose.x_mm;
+      const BackupRoute::MapProfile &profile=selectedBackupCProfileConst();
+      beginRelativeMove(0.0f,
+          selectedFieldLateralSign()*profile.lateralDistanceMm,
+          profile.lateralSpeedMmS);
+      const uint32_t expectedMs=static_cast<uint32_t>(
+          profile.lateralDistanceMm/profile.lateralSpeedMmS*1000.0f)+8000UL;
+      stateTimeoutMs=constrain(expectedMs,10000UL,30000UL);
+      Serial.print("ACK,AUTO_BACKUP_C_TRAVEL,FIELD,");
+      Serial.print(selectedFieldName());Serial.print(",LATERAL_MM,");
+      Serial.print(selectedFieldLateralSign()*profile.lateralDistanceMm,1);
+      Serial.print(",GROUP,");Serial.println(backupCUsesRightStopGroup()?"RIGHT":"LEFT");
+      break;}
+    case BACKUP_C_ALIGN:
+      xAligned=false;yAligned=false;autoXStableSince=0;
+      rightLinePid.reset();leftLinePid.reset();
+      resetStationAlignmentShaping();
+      fineHeadingPid.reset();stationHeadingCommandWz=0.0f;
+      pointBSearchCenterYmm=pose.y_mm;
+      pointAHSearchCenterXmm=pose.x_mm;
+      pointAHSearchDirectionSign=preferredPointHSearchDirectionSign();
+      pointBSearchDirectionSign=-selectedFieldLateralSign();
+      pointBPairLostSinceMs=0;resetLateralLineHold();
+      stateTimeoutMs=POINT_A_H_SEARCH_TIMEOUT_MS;
+      Serial.print("ACK,AUTO_BACKUP_C_ALIGN_MIDDLE_INSIDE_H1_H2,");
+      Serial.println(backupCUsesRightStopGroup()?"RIGHT":"LEFT");
+      break;
+    case BACKUP_C_VERIFY:
+      autoHeadingStableSince=0;stationHeadingCommandWz=0.0f;
+      fineHeadingPid.reset();stateTimeoutMs=5000;break;
+    case BACKUP_C_WAIT_MECHANISM:
+      stopRobot();stationMechanismCommandStarted=false;
+      stationCommandLineStableSinceMs=0;
+      stateTimeoutMs=ESP32_REPLY_TIMEOUT_MS;break;
+    case BACKUP_C_EXIT_TO_BRIDGE:{
+      stopArrayCountingLocked=true;
+      const BackupRoute::MapProfile &profile=selectedBackupCProfileConst();
+      beginRelativeMove(0.0f,
+          selectedFieldLateralSign()*profile.exitDistanceMm,
+          min(profile.lateralSpeedMmS,400.0f));
+      stateTimeoutMs=6000;
+      Serial.print("ACK,AUTO_BACKUP_C_EXIT_TO_BRIDGE,MM,");
+      Serial.println(selectedFieldLateralSign()*profile.exitDistanceMm,1);
+      break;}
     case DI_SANG_C:
       stopArrayCountingLocked=true;
-      // Verified on-floor on 2026-09-05: this drivetrain's current physical
-      // mapping moves LEFT for positive relative Y. Keep this post-B test
-      // independent of field mirroring.
-      beginRelativeMove(0.0f,POST_B_LEFT_DISTANCE_MM,POST_B_LEFT_SPEED_MM_S);
+      // RED uses the measured +Y route. BLUE mirrors only the lateral axis;
+      // the intentional +X bridge approach remains unchanged.
+      // Use encoder control on both axes here. H1/H2 travel hold would cancel
+      // the intentional +X advance requested for this diagonal segment.
+      beginRelativeMove(selectedPostBForwardDistanceMm(),
+                        selectedFieldLateralSign()*selectedPostBLateralDistanceMm(),
+                        POST_B_LEFT_SPEED_MM_S);
+      Serial.print("ACK,AUTO_POST_B_TO_BRIDGE,FIELD,");
+      Serial.print(selectedField==FIELD_RED?"RED":"BLUE");
+      Serial.print(",FORWARD_MM,");Serial.print(selectedPostBForwardDistanceMm(),1);
+      Serial.print(",LATERAL_MM,");
+      Serial.println(selectedFieldLateralSign()*selectedPostBLateralDistanceMm(),1);
       stateTimeoutMs=8000;break;
     case BU_TAM_C:
       beginRelativeMove(0,selectedFieldLateralSign()*C_OFFSET_MM,180);break;
     case CAN_YAW_C: break;
     case CHAY_LEN_XANH:
-      linePid.reset();bridgeLineValidSince=0;
+      linePid.reset();bridgeLineValidSince=0;bridgeEntryCenterStableSince=0;
       bridgeAcquireStartPose=pose;
-      bridgeAcquireSearchDirectionSign=1;
+      bridgeAcquireSearchDirectionSign=selectedFieldLateralSign();
       fineHeadingPid.reset();stationHeadingCommandWz=0.0f;
       stateTimeoutMs=BRIDGE_LINE_ACQUIRE_TIMEOUT_MS;break;
     case CAN_GIUA_LINE_C:
@@ -3187,7 +4378,8 @@ void onEnterState() {
       pointARightMiddleSeen=false;pointARightInsideSeen=false;
       pointARightPairStartedMs=0;
       stateTimeoutMs=POINT_A_RIGHT_SEARCH_TIMEOUT_MS;
-      Serial.println("ACK,AUTO_H1_H2_ALIGNED_SEARCH_POINT_A_RIGHT");break;
+      Serial.print("ACK,AUTO_H1_H2_ALIGNED_SEARCH_POINT_A_GROUP,");
+      Serial.println(selectedFieldUsesRightStopGroup()?"RIGHT":"LEFT");break;
     case DI_LEN_DEM_LINE:
       bridgeCrossCount=0;bridgeCrossLatched=false;bridgeCrossClearSince=0;
       bridgeCommandSpeedMmS=BRIDGE_FORWARD_SPEED_MM_S;
@@ -3203,19 +4395,34 @@ void onEnterState() {
       bridgeRelativeTiltDeg=0.0f;
       bridgeInclineSinceMs=0;bridgeLevelSinceMs=0;bridgeDescentSinceMs=0;
       bridgeDescentLevelSinceMs=0;
+      bridgeCrestDetectedMs=0;bridgeLineGapStartedMs=0;
+      bridgeDescentLineRecoverySinceMs=0;
+      bridgeLastValidLineVy=0.0f;bridgeLineGapActive=false;
+      bridgeLineGapHoldExpiredReported=false;
 #if ROBOCON_AFTER_BRIDGE_TEST_BUILD
       bridgeEndMarkerArmed=true;
 #else
       bridgeEndMarkerArmed=false;
 #endif
+      bridgeMarkerDistanceGateReported=false;
+
+
       bridgeEndMarkerSinceMs=0;bridgeSideMarkerSinceMs=0;
       bridgeEndMarkerSource=BRIDGE_MARKER_NONE;
+      bridgeBResumeRequested=false;bridgeBResumeAccepted=false;
+      bridgeBResumeDone=false;bridgeBResumeAttempts=0;
+      bridgeBResumeStartedMs=0;lastBridgeBResumeSendMs=0;
       bridgeEndMarkerAdvanceTargetMm=0.0f;
       bridgeEndMarkerPose=pose;
-      bridgeAscentDetectedMs=0;bridgeSlopeAxis=0;
+      bridgeAscentDetectedMs=0;bridgeSlopeAxis=0;bridgeAscentSlopeSign=0;
+      bridgePeakRollDeg=0.0f;bridgePeakPitchDeg=0.0f;
       moveCommand.active=false;
       positionErrorX=0.0f;positionErrorY=0.0f;
-      linePid.reset();stateTimeoutMs=BRIDGE_FOLLOW_TIMEOUT_MS;
+      linePid.reset();
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+      resetBridgeLine1150Debug();
+#endif
+      stateTimeoutMs=BRIDGE_FOLLOW_TIMEOUT_MS;
 #if ROBOCON_AFTER_BRIDGE_TEST_BUILD
       Serial.println("ACK,AFTER_BRIDGE_TEST_LINE_FOLLOW_MARKERS_ARMED");
 #endif
@@ -3243,54 +4450,72 @@ void onEnterState() {
       rightLinePid.reset();leftLinePid.reset();
       fineHeadingPid.reset();stationHeadingCommandWz=0.0f;
       sendEsp("E18,ARM");
-      // Physical calibration: -Y is robot-right. First make the measured
-      // coarse move, then reuse point B's sensor PID for final alignment.
-      beginRelativeMove(0.0f,-POST_BRIDGE_E18_RIGHT_DISTANCE_MM,
+      // RED moves -Y after the bridge; BLUE mirrors this to +Y and swaps the
+      // outside+middle sensor group used for final alignment.
+      beginRelativeMove(0.0f,
+                        -selectedFieldLateralSign()*POST_BRIDGE_E18_RIGHT_DISTANCE_MM,
                         POST_BRIDGE_E18_RIGHT_SPEED_MM_S);
       stateTimeoutMs=POST_BRIDGE_E18_SEARCH_TIMEOUT_MS;
-      Serial.println("ACK,AUTO_POST_BRIDGE_RIGHT_190MM_THEN_ALIGN_POINT_B_PAIR_E18");break;
+      Serial.print("ACK,AUTO_POST_BRIDGE_LATERAL_ALIGN,FIELD,");
+      Serial.print(selectedField==FIELD_RED?"RED":"BLUE");
+      Serial.print(",MM,");
+      Serial.println(-selectedFieldLateralSign()*POST_BRIDGE_E18_RIGHT_DISTANCE_MM,1);
+      break;
     case TIEN_E18_70:
-      pointBSearchCenterYmm=pose.y_mm;pointBSearchDirectionSign=1;
+      pointBSearchCenterYmm=pose.y_mm;
+      pointBSearchDirectionSign=selectedFieldLateralSign();
       // This state is reachable only after the required pair was confirmed.
       // Preserve that latch across the transition instead of rejecting the
       // move because of one noisy sample on the next 10 ms control tick.
       autoXStableSince=0;xAligned=true;pointBPairLostSinceMs=0;
       rightLinePid.reset();leftLinePid.reset();
-      beginRelativeMove(POST_BRIDGE_E18_FORWARD_DISTANCE_MM,0.0f,
+      beginRelativeMove(selectedPostBridgeForwardDistanceMm(),0.0f,
                         POST_BRIDGE_E18_FORWARD_SPEED_MM_S);
       stateTimeoutMs=8000;
-      Serial.println("ACK,AUTO_LINE_PRIMARY_FORWARD_70MM_WITH_PAIR_HOLD");break;
+      Serial.print("ACK,AUTO_LINE_PRIMARY_FORWARD_WITH_PAIR_HOLD,FIELD,");
+      Serial.print(selectedField==FIELD_BLUE?"BLUE":"RED");
+      Serial.print(",MM,");
+      Serial.println(selectedPostBridgeForwardDistanceMm(),1);break;
     case DOI_DONE_THA2A:
       stopRobot();espDoneTha2A=false;doneTha2AAttempts=0;
-      lastDoneTha2ASendMs=0;sendDoneTha2ARequest();
-      stateTimeoutMs=DONE_THA2A_TOTAL_TIMEOUT_MS;break;
+      lastDoneTha2ASendMs=0;
+      if(bridgeBResumeDone)sendDoneTha2ARequest();
+      stateTimeoutMs=BRIDGE_B_RESUME_TOTAL_TIMEOUT_MS+
+                     DONE_THA2A_TOTAL_TIMEOUT_MS;break;
     case DI_CHEO_PHAI_THA2B:
       targetYawDeg=competitionHeadingDeg;
       headingPid.reset();fineHeadingPid.reset();
       tha2BCoarseLineArmed=false;
       tha2BCoarseClearSinceMs=0;tha2BCoarseHitSinceMs=0;
       beginRelativeMove(-POST_THA2A_BACKWARD_DISTANCE_MM,
-                        -POST_THA2A_RIGHT_DISTANCE_MM,
+                        -selectedFieldLateralSign()*POST_THA2A_RIGHT_DISTANCE_MM,
                         POST_THA2A_DIAGONAL_SPEED_MM_S);
       stateTimeoutMs=THA2B_DIAGONAL_TIMEOUT_MS;
-      Serial.println("ACK,AUTO_THA2B_MOVE_RIGHT_400_BACK_200");break;
+      Serial.print("ACK,AUTO_THA2B_DIAGONAL,FIELD,");
+      Serial.print(selectedField==FIELD_RED?"RED":"BLUE");
+      Serial.print(",BACKWARD_MM,");Serial.print(POST_THA2A_BACKWARD_DISTANCE_MM,1);
+      Serial.print(",LATERAL_MM,");
+      Serial.println(-selectedFieldLateralSign()*POST_THA2A_RIGHT_DISTANCE_MM,1);
+      break;
     case CAN_LINE_DOC_PHAI_THA2B:
       stopRobot();xAligned=false;autoXStableSince=0;pointBPairLostSinceMs=0;
-      // If the coarse move has just passed the line, search back toward
-      // robot-left first instead of continuing farther to the right.
-      pointBSearchCenterYmm=pose.y_mm;pointBSearchDirectionSign=1;
-      rightLinePid.reset();fineHeadingPid.reset();
+      // Search back opposite the mirrored coarse move before sweeping both
+      // directions around the measured arrival point.
+      pointBSearchCenterYmm=pose.y_mm;
+      pointBSearchDirectionSign=selectedFieldLateralSign();
+      rightLinePid.reset();leftLinePid.reset();fineHeadingPid.reset();
       stateTimeoutMs=THA2B_LINE_SEARCH_TIMEOUT_MS;
-      Serial.println("ACK,AUTO_THA2B_ALIGN_RIGHT_MIDDLE_INSIDE");break;
+      Serial.print("ACK,AUTO_THA2B_ALIGN_GROUP,");
+      Serial.println(tha2BUsesRightStopGroup()?"RIGHT":"LEFT");break;
     case LUI_BAM_LINE_DOC_THA2B:
       moveCommand.active=false;xAligned=true;pointBPairLostSinceMs=0;
       tha2BHorizontalSinceMs=0;tha2BHorizontalClearSinceMs=0;
-      rightLinePid.reset();fineHeadingPid.reset();
+      rightLinePid.reset();leftLinePid.reset();fineHeadingPid.reset();
       stateTimeoutMs=THA2B_REVERSE_TIMEOUT_MS;
       Serial.println("ACK,AUTO_THA2B_REVERSE_FOLLOW_VERTICAL_LINE");break;
     case LUI_RA_LINE_NGANG_THA2B:
       tha2BHorizontalClearSinceMs=0;pointBPairLostSinceMs=0;
-      rightLinePid.reset();
+      rightLinePid.reset();leftLinePid.reset();
       stateTimeoutMs=4000;
       Serial.println("ACK,AUTO_THA2B_HORIZONTAL_FOUND_REVERSE_SLOW_TO_CLEAR");break;
     case DOI_DONE_THA2B:
@@ -3301,10 +4526,15 @@ void onEnterState() {
       targetYawDeg=competitionHeadingDeg;
       headingPid.reset();fineHeadingPid.reset();
       beginRelativeMove(-POST_THA2B_EXIT_REVERSE_DISTANCE_MM,
-                        -POST_THA2B_EXIT_RIGHT_DISTANCE_MM,
+                        -selectedFieldLateralSign()*POST_THA2B_EXIT_RIGHT_DISTANCE_MM,
                         POST_THA2B_EXIT_DIAGONAL_SPEED_MM_S);
       stateTimeoutMs=POST_THA2B_EXIT_DIAGONAL_TIMEOUT_MS;
-      Serial.println("ACK,AUTO_POST_THA2B_DIAGONAL_RIGHT_2000_REVERSE_3000");break;
+      Serial.print("ACK,AUTO_POST_THA2B_EXIT,FIELD,");
+      Serial.print(selectedField==FIELD_RED?"RED":"BLUE");
+      Serial.print(",REVERSE_MM,");Serial.print(POST_THA2B_EXIT_REVERSE_DISTANCE_MM,1);
+      Serial.print(",LATERAL_MM,");
+      Serial.println(-selectedFieldLateralSign()*POST_THA2B_EXIT_RIGHT_DISTANCE_MM,1);
+      break;
     case FINISH: armed=false;stopRobot();stateTimeoutMs=0;break;
     case FAULT_STOP: armed=false;stopRobot();stateTimeoutMs=0;break;
   }
@@ -3334,15 +4564,17 @@ void updateCompetition(float dt) {
     case CAN_START:
       if(updateRelativeMove(dt)){
         stopRobot();targetYawDeg=competitionHeadingDeg;
-        transitionTo(DI_SANG_TRAI_A);
-        Serial.println("ACK,AUTO_START_ENCODER_170MM_DONE_SEARCH_LINE_2");
+        transitionTo(backupCRouteEnabled()?BACKUP_C_TRAVEL:DI_SANG_TRAI_A);
+        Serial.print("ACK,AUTO_START_ENCODER_DONE_SEARCH_LINE_2,MM,");
+        Serial.println(selectedStartEncoderDistanceMm(),1);
       }
       break;
     case CAN_START_FAST:
       if(updateRelativeMove(dt)){
         stopRobot();targetYawDeg=competitionHeadingDeg;
         transitionTo(CAN_START_FINE);
-        Serial.println("ACK,AUTO_START_ENCODER_170MM_DONE_TOF_ENABLED");
+        Serial.print("ACK,AUTO_START_ENCODER_DONE_TOF_ENABLED,MM,");
+        Serial.println(selectedStartEncoderDistanceMm(),1);
       }
       break;
     case CAN_START_FINE:{
@@ -3376,7 +4608,7 @@ void updateCompetition(float dt) {
       }
       break;}
     case DI_SANG_TRAI_A:
-      // Find the next complete line; no H1/H2 longitudinal correction here.
+      // H1/H2 travel hold is controlled by H1_H2_TRAVEL_HOLD_ENABLED.
       if(updateAutoPickTravel(dt,selectedFieldUsesRightStopGroup(),PICK_A_LINE_TARGET))
         transitionTo(BU_TAM_A);
       break;
@@ -3406,13 +4638,30 @@ void updateCompetition(float dt) {
       break;
     case DOI_GAP_A:
       stopRobot();
+      if(!stationMechanismCommandStarted){
+        if(!pointARequiredSensorsOnLine(selectedFieldUsesRightStopGroup())){
+          stationCommandLineStableSinceMs=0;
+          Serial.println("SAFETY,POINT_A_UART_BLOCKED,H1_H2_OR_SIDE_PAIR_NOT_ON_LINE");
+          transitionTo(BU_TAM_A);
+          break;
+        }
+        if(!stationCommandLineStableSinceMs)
+          stationCommandLineStableSinceMs=millis();
+        if(millis()-stationCommandLineStableSinceMs<
+           STATION_UART_LINE_CONFIRM_MS)break;
+        beginAutoMechanismAction("POINT_A");
+        stationMechanismCommandStarted=true;
+        reportStationLineInfo("POINT_A_UART_COMMIT",
+                              selectedFieldUsesRightStopGroup());
+        Serial.println("SAFETY,AUTO_WAIT,POINT_A,ESP32_DONE");
+      }
       if(!espDone&&
          millis()-stateStartedMs>5500&&millis()-espCommandSentMs>5000)
         sendEsp("POINT_A");
       if(autoMechanismActionComplete())transitionTo(DI_SANG_TRAI_B);
       break;
     case DI_SANG_TRAI_B:
-      if(updateRelativeLateralMoveWithHold(dt)){
+      if(updateRelativeLateralTravel(dt)){
         Serial.println("ACK,AUTO_A_TO_B_ENCODER_200MM_DONE");
         transitionTo(BU_TAM_B);
       }
@@ -3426,7 +4675,7 @@ void updateCompetition(float dt) {
       const bool rightGroup=secondPickUsesRightStopGroup();
       if(pointBPairLostBeyondGrace(rightGroup)){
         xAligned=false;transitionTo(BU_TAM_B);
-      }else if(pointBRequiredSensorsOnLine(rightGroup)){
+      }else if(pointBStationRequiredSensorsOnLine(rightGroup)){
         yAligned=true;reportStationLineInfo("POINT_B",rightGroup);
         transitionTo(CAN_B);
       }else{
@@ -3435,7 +4684,7 @@ void updateCompetition(float dt) {
       break;}
     case CAN_B:{
       const bool rightGroup=secondPickUsesRightStopGroup();
-      const bool pairOnLine=pointBRequiredSensorsOnLine(rightGroup);
+      const bool pairOnLine=pointBStationRequiredSensorsOnLine(rightGroup);
       if(!pairOnLine){
         if(!pointBPairLostSinceMs)pointBPairLostSinceMs=millis();
         if(millis()-pointBPairLostSinceMs>=POINT_B_PAIR_LOST_GRACE_MS)
@@ -3466,6 +4715,23 @@ void updateCompetition(float dt) {
       break;}
     case DOI_GAP_B:
       stopRobot();
+      if(!stationMechanismCommandStarted){
+        const bool rightGroup=secondPickUsesRightStopGroup();
+        if(!pointBStationRequiredSensorsOnLine(rightGroup)){
+          stationCommandLineStableSinceMs=0;
+          Serial.println("SAFETY,POINT_B_UART_BLOCKED,H1_H2_OR_SIDE_PAIR_NOT_ON_LINE");
+          transitionTo(BU_TAM_B);
+          break;
+        }
+        if(!stationCommandLineStableSinceMs)
+          stationCommandLineStableSinceMs=millis();
+        if(millis()-stationCommandLineStableSinceMs<
+           STATION_UART_LINE_CONFIRM_MS)break;
+        beginAutoMechanismAction("POINT_B");
+        stationMechanismCommandStarted=true;
+        reportStationLineInfo("POINT_B_UART_COMMIT",rightGroup);
+        Serial.println("ACK,AUTO_POINT_B_VERIFIED_WAIT_ESP32_DONE");
+      }
       if(!espDone&&
          millis()-stateStartedMs>5500&&millis()-espCommandSentMs>5000)
         sendEsp("POINT_B");
@@ -3474,10 +4740,86 @@ void updateCompetition(float dt) {
         Serial.println("ACK,AUTO_STOP_ARRAYS_LOCKED_AFTER_POINT_B");
         transitionTo(DI_SANG_C);
       }break;
-    case DI_SANG_C:
-      if(updateRelativeMove(dt)){
+    case BACKUP_C_TRAVEL:
+      if(updateRelativeLateralTravel(dt)){
         stopRobot();
-        Serial.println("ACK,AUTO_POST_B_LEFT_1300MM_DONE_ACQUIRE_8_EYE_LINE");
+        Serial.println("ACK,AUTO_BACKUP_C_ENCODER_GATE_REACHED_START_LINE_ALIGN");
+        transitionTo(BACKUP_C_ALIGN);
+      }
+      break;
+    case BACKUP_C_ALIGN:
+      if(updateAutoPickX(dt,backupCUsesRightStopGroup())){
+        yAligned=true;
+        reportStationLineInfo("POINT_C",backupCUsesRightStopGroup());
+        transitionTo(BACKUP_C_VERIFY);
+      }
+      break;
+    case BACKUP_C_VERIFY:
+      if(!pointBStationRequiredSensorsOnLine(backupCUsesRightStopGroup())){
+        xAligned=false;transitionTo(BACKUP_C_ALIGN);break;
+      }
+      yAligned=true;
+      setRobotVelocity(0,0,headingControlStationary(dt));
+      if(autoPickVerified())transitionTo(BACKUP_C_WAIT_MECHANISM);
+      break;
+    case BACKUP_C_WAIT_MECHANISM:
+      stopRobot();
+      if(!stationMechanismCommandStarted){
+        if(!pointBStationRequiredSensorsOnLine(backupCUsesRightStopGroup())){
+          stationCommandLineStableSinceMs=0;
+          Serial.println("SAFETY,POINT_C_UART_BLOCKED,H1_H2_OR_SIDE_PAIR_NOT_ON_LINE");
+          transitionTo(BACKUP_C_ALIGN);break;
+        }
+        if(!stationCommandLineStableSinceMs)
+          stationCommandLineStableSinceMs=millis();
+        if(millis()-stationCommandLineStableSinceMs<
+           STATION_UART_LINE_CONFIRM_MS)break;
+        beginAutoMechanismAction("POINT_C");
+        stationMechanismCommandStarted=true;
+        reportStationLineInfo("POINT_C_UART_COMMIT",backupCUsesRightStopGroup());
+        Serial.println("SAFETY,AUTO_WAIT,POINT_C,ESP32_DONE");
+      }
+      if(!espDone&&millis()-stateStartedMs>5500&&
+         millis()-espCommandSentMs>5000)sendEsp("POINT_C");
+      if(autoMechanismActionComplete())transitionTo(BACKUP_C_EXIT_TO_BRIDGE);
+      break;
+    case BACKUP_C_EXIT_TO_BRIDGE:
+      if(updateRelativeLateralEncoderMove(dt,selectedField!=FIELD_BLUE)){
+        if(selectedField==FIELD_BLUE){
+          if(centerLine.valid){
+            float vx=BRIDGE_APPROACH_SPEED_MM_S;
+            const float vy=updateLineFollowing(dt,vx);
+            setRobotVelocity(vx,vy,
+                             headingControl(dt,MAX_BRIDGE_HEADING_WZ_RAD_S));
+          }else{
+            setRobotVelocity(0.0f,
+                selectedFieldLateralSign()*BRIDGE_LINE_SEARCH_SPEED_MM_S,
+                headingControlLateral(dt));
+          }
+        }
+        Serial.println("ACK,AUTO_BACKUP_C_EXIT_DONE_ACQUIRE_BRIDGE_LINE");
+        transitionTo(CHAY_LEN_XANH);
+      }
+      break;
+    case DI_SANG_C:
+      if(updateRelativeLateralEncoderMove(dt,selectedField!=FIELD_BLUE)){
+        if(selectedField==FIELD_BLUE){
+          // Select the next command before changing state so BLUE wheel torque
+          // never drops to zero at the bridge entrance.
+          if(centerLine.valid){
+            float vx=BRIDGE_APPROACH_SPEED_MM_S;
+            const float vy=updateLineFollowing(dt,vx);
+            setRobotVelocity(vx,vy,
+                             headingControl(dt,MAX_BRIDGE_HEADING_WZ_RAD_S));
+          }else{
+            setRobotVelocity(0.0f,
+                             selectedFieldLateralSign()*BRIDGE_LINE_SEARCH_SPEED_MM_S,
+                             headingControlLateral(dt));
+          }
+          Serial.println("ACK,AUTO_BLUE_POST_B_MOVE_DONE_ROLLING_LINE_ACQUIRE");
+        }else{
+          Serial.println("ACK,AUTO_RED_POST_B_MOVE_DONE_LINE_ACQUIRE");
+        }
         transitionTo(CHAY_LEN_XANH);
       }
       break;
@@ -3485,26 +4827,54 @@ void updateCompetition(float dt) {
     case CAN_YAW_C: if(updateYawAlignment(dt))transitionTo(DI_LEN_DEM_LINE);break;
     case CHAY_LEN_XANH:{
       if(centerLine.valid){
-        const bool centered=
-            fabsf(centerLine.position)<=BRIDGE_ENTRY_CENTER_TOLERANCE;
-        if(centered){
-          setRobotVelocity(0.0f,0.0f,headingControlStationary(dt));
-          if(!bridgeLineValidSince)bridgeLineValidSince=millis();
-          if(millis()-bridgeLineValidSince>=BRIDGE_LINE_ACQUIRE_CONFIRM_MS){
-            stopRobot();
-            Serial.println("ACK,AUTO_8_EYE_LINE_CENTERED_FOLLOW_UNTIL_END_MARKER");
-            transitionTo(DI_LEN_DEM_LINE);
-          }
+        if(!bridgeLineValidSince)bridgeLineValidSince=millis();
+        if(fabsf(centerLine.position)<=BRIDGE_ENTRY_CENTER_TOLERANCE){
+          if(!bridgeEntryCenterStableSince)bridgeEntryCenterStableSince=millis();
         }else{
-          bridgeLineValidSince=0;
+          bridgeEntryCenterStableSince=0;
+        }
+        if(selectedField==FIELD_BLUE){
+          // BLUE rolling handoff: confirm the line while already applying
+          // bridge approach torque so the chassis cannot roll backward.
+          float vx=BRIDGE_APPROACH_SPEED_MM_S;
+          const float vy=updateLineFollowing(dt,vx);
+          vx=max(vx,BLUE_BRIDGE_ENTRY_MIN_FORWARD_SPEED_MM_S);
+          if(faultFlags!=FAULT_NONE){
+            stopRobot();
+            break;
+          }
+          setRobotVelocity(vx,vy,
+                           headingControl(dt,MAX_BRIDGE_HEADING_WZ_RAD_S));
+        }else{
+          // Preserve the proven RED behavior exactly.
           const float error=CENTER_LINE_CONTROL_SIGN*centerLine.position;
           const float vy=linePid.updateError(
               error,dt,-BRIDGE_ENTRY_CENTER_MAX_VY_MM_S,
               BRIDGE_ENTRY_CENTER_MAX_VY_MM_S);
           setRobotVelocity(0.0f,vy,headingControlLateral(dt));
         }
+        const bool lineConfirmed=
+            millis()-bridgeLineValidSince>=BRIDGE_LINE_ACQUIRE_CONFIRM_MS;
+        const bool blueCenteredConfirmed=
+            selectedField!=FIELD_BLUE ||
+            (bridgeEntryCenterStableSince!=0 &&
+             millis()-bridgeEntryCenterStableSince>=
+                 BRIDGE_ENTRY_CENTER_CONFIRM_MS);
+        if(lineConfirmed&&blueCenteredConfirmed){
+          if(selectedField==FIELD_BLUE){
+            Serial.print("ACK,AUTO_BLUE_BRIDGE_ENTRY_CENTERED,POSITION,");
+            Serial.print(centerLine.position,1);
+            Serial.print(",MIN_VX,");
+            Serial.println(BLUE_BRIDGE_ENTRY_MIN_FORWARD_SPEED_MM_S,1);
+          }
+          Serial.println(selectedField==FIELD_BLUE
+              ?"ACK,AUTO_BLUE_8_EYE_LINE_ACQUIRED_ROLLING_BRIDGE_HANDOFF"
+              :"ACK,AUTO_RED_8_EYE_LINE_ACQUIRED_START_BRIDGE");
+          transitionTo(DI_LEN_DEM_LINE);
+        }
       }else{
         bridgeLineValidSince=0;
+        bridgeEntryCenterStableSince=0;
         linePid.reset();
         const float worldDx=pose.x_mm-bridgeAcquireStartPose.x_mm;
         const float worldDy=pose.y_mm-bridgeAcquireStartPose.y_mm;
@@ -3521,30 +4891,32 @@ void updateCompetition(float dt) {
       }
       break;}
     case CAN_GIUA_LINE_C:{
-      // Verified by a live isolated-array test: with only the physical RIGHT
-      // group on black, normalized[3..5] read 1000 while [0..2] stayed near 0.
-      // Order within the group is outside/middle/inside.
-      const bool rightMiddleOnLine=
-        stopLine.normalized[4]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
-      const bool rightInsideOnLine=
-        stopLine.normalized[5]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
-      if(rightMiddleOnLine||rightInsideOnLine){
+      // Legacy entry path uses the same mirrored A-side group as the official
+      // route. Logical order inside either group is outside/middle/inside.
+      const bool rightGroup=selectedFieldUsesRightStopGroup();
+      const uint8_t offset=rightGroup?3:0;
+      const bool routeMiddleOnLine=
+        stopLine.normalized[offset+1]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
+      const bool routeInsideOnLine=
+        stopLine.normalized[offset+2]>=POINT_A_RIGHT_SENSOR_THRESHOLD;
+      if(routeMiddleOnLine||routeInsideOnLine){
         if(!pointARightPairStartedMs)pointARightPairStartedMs=millis();
-        pointARightMiddleSeen|=rightMiddleOnLine;
-        pointARightInsideSeen|=rightInsideOnLine;
+        pointARightMiddleSeen|=routeMiddleOnLine;
+        pointARightInsideSeen|=routeInsideOnLine;
       }
       if(pointARightPairStartedMs&&
          millis()-pointARightPairStartedMs>POINT_A_RIGHT_PAIR_WINDOW_MS){
-        pointARightMiddleSeen=rightMiddleOnLine;
-        pointARightInsideSeen=rightInsideOnLine;
-        pointARightPairStartedMs=(rightMiddleOnLine||rightInsideOnLine)?millis():0;
+        pointARightMiddleSeen=routeMiddleOnLine;
+        pointARightInsideSeen=routeInsideOnLine;
+        pointARightPairStartedMs=(routeMiddleOnLine||routeInsideOnLine)?millis():0;
       }
       if(pointARightMiddleSeen&&pointARightInsideSeen){
         stopRobot();
         if(!autoXStableSince)autoXStableSince=millis();
         if(millis()-autoXStableSince>=POINT_A_RIGHT_CONFIRM_MS){
           stopRobot();
-          Serial.println("ACK,AUTO_POINT_A_RIGHT_MIDDLE_INSIDE_FOUND");
+          Serial.print("ACK,AUTO_POINT_A_ROUTE_MIDDLE_INSIDE_FOUND,");
+          Serial.println(rightGroup?"RIGHT":"LEFT");
           transitionTo(DOI_GAP_A);
         }
       }else{
@@ -3555,13 +4927,24 @@ void updateCompetition(float dt) {
           headingControlLateral(dt));
       }
       break;}
-    case DI_LEN_DEM_LINE:
-      if(updateBridgeLineUntilEndMarker(dt)){
+    case DI_LEN_DEM_LINE:{
+      const bool bridgeRouteDone=updateBridgeLineUntilEndMarker(dt);
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+      if(bridgeSlopePhase==BRIDGE_PHASE_CREST||bridgeRouteDone){
+        stopRobot();armed=false;
+        printBridgeLine1150Summary(
+            bridgeSlopePhase==BRIDGE_PHASE_CREST?"CREST_REACHED":"MARKER_REACHED");
+        Serial.println("ACK,BRIDGE_LINE_1150_TEST_STOPPED");
+        transitionTo(FINISH);
+      }
+#else
+      if(bridgeRouteDone){
         stopRobot();
         Serial.println("ACK,AUTO_BRIDGE_END_BLACK_MARKER_DETECTED_STOP");
         transitionTo(CAN_PHAI_LINE_B_E18);
       }
-      break;
+#endif
+      break;}
     case CAN_PHAI_LINE_B_E18:{
       const bool rightGroup=secondPickUsesRightStopGroup();
       if(millis()-lastPostBridgeE18PollMs>=POST_BRIDGE_E18_POLL_MS){
@@ -3569,14 +4952,14 @@ void updateCompetition(float dt) {
         lastPostBridgeE18PollMs=millis();
       }
       if(!postBridgeCoarseMoveDone){
-        // The point-B eye pair is authoritative even during the 190 mm
+        // The post-bridge outside+middle pair is authoritative during the 190 mm
         // encoder move. Stop lateral travel as soon as both eyes are stable
         // on black, then advance immediately without waiting for 190 mm.
-        if(pointBRequiredSensorsOnLine(rightGroup)){
+        if(postBridgeOuterPairOnLine(rightGroup)){
           stopRobot();
           if(!postBridgeE18LineSinceMs)postBridgeE18LineSinceMs=millis();
           if(millis()-postBridgeE18LineSinceMs>=POST_BRIDGE_E18_LINE_CONFIRM_MS){
-            Serial.print("ACK,AUTO_POINT_B_PAIR_EARLY_CONFIRMED,E18_AUX,");
+            Serial.print("ACK,AUTO_OUTSIDE_MIDDLE_EARLY_CONFIRMED,E18_AUX,");
             Serial.println(espE18BothDetected?1:0);
             espE18BothDetected=false;moveCommand.active=false;xAligned=true;
             sendMechanismFrame("E18,DISARM");
@@ -3590,7 +4973,7 @@ void updateCompetition(float dt) {
           pointBSearchCenterYmm=pose.y_mm;pointBPairLostSinceMs=0;
           // The 190 mm coarse move may pass the line. Search back first,
           // exactly like the point-B arrival path.
-          pointBSearchDirectionSign=1;
+          pointBSearchDirectionSign=selectedFieldLateralSign();
           autoXStableSince=0;rightLinePid.reset();leftLinePid.reset();
           Serial.print("ACK,AUTO_POST_BRIDGE_190MM_DONE_ALIGN_GROUP,");
           Serial.println(rightGroup?"RIGHT":"LEFT");
@@ -3601,15 +4984,15 @@ void updateCompetition(float dt) {
       if(!xAligned){
         if(updateAutoPickX(dt,rightGroup)){
           xAligned=true;postBridgeE18LineSinceMs=0;
-          Serial.println("ACK,AUTO_POST_BRIDGE_POINT_B_PAIR_ALIGNED_WAIT_E18");
+          Serial.println("ACK,AUTO_POST_BRIDGE_OUTSIDE_MIDDLE_ALIGNED");
         }
         break;
       }
 
-      const bool pointBPairStillOnLine=pointBRequiredSensorsOnLine(rightGroup);
-      if(!pointBPairStillOnLine){
+      const bool postBridgeOuterPairStillOnLine=postBridgeOuterPairOnLine(rightGroup);
+      if(!postBridgeOuterPairStillOnLine){
         xAligned=false;autoXStableSince=0;postBridgeE18LineSinceMs=0;
-        Serial.println("ACK,AUTO_POST_BRIDGE_POINT_B_PAIR_LOST_REALIGN");
+        Serial.println("ACK,AUTO_POST_BRIDGE_OUTSIDE_MIDDLE_LOST_REALIGN");
         break;
       }
 
@@ -3618,7 +5001,7 @@ void updateCompetition(float dt) {
       stopRobot();
       if(!postBridgeE18LineSinceMs)postBridgeE18LineSinceMs=millis();
       if(millis()-postBridgeE18LineSinceMs>=POST_BRIDGE_E18_LINE_CONFIRM_MS){
-        Serial.print("ACK,AUTO_POINT_B_PAIR_CONFIRMED,E18_AUX,");
+        Serial.print("ACK,AUTO_OUTSIDE_MIDDLE_CONFIRMED,E18_AUX,");
         Serial.println(espE18BothDetected?1:0);
         espE18BothDetected=false;moveCommand.active=false;
         sendMechanismFrame("E18,DISARM");
@@ -3626,14 +5009,26 @@ void updateCompetition(float dt) {
       }
       break;}
     case TIEN_E18_70:
-      if(updateForwardKeepingPointBPair(
+      if(updateForwardKeepingPostBridgeOuterPair(
              dt,secondPickUsesRightStopGroup())){
-        stopRobot();Serial.println("ACK,AUTO_POST_BRIDGE_FORWARD_70MM_DONE");
+        stopRobot();
+        Serial.print("ACK,AUTO_POST_BRIDGE_FORWARD_DONE,MM,");
+        Serial.println(selectedPostBridgeForwardDistanceMm(),1);
         transitionTo(DOI_DONE_THA2A);
       }
       break;
     case DOI_DONE_THA2A:
       stopRobot();
+#if ROBOCON_AFTER_BRIDGE_TEST_CHASSIS_ONLY
+      espDoneTha2A=true;
+#endif
+      if(!bridgeBResumeDone){
+        // Chassis has finished its post-bridge alignment, but THA_2A must not
+        // overlap the remaining B lift. The global handshake updater keeps
+        // retrying BRIDGE_STABLE until DONE_BRIDGE_B arrives.
+        break;
+      }
+      if(doneTha2AAttempts==0)sendDoneTha2ARequest();
       if(espDoneTha2A){
         Serial.println("ACK,AUTO_DONE_THA2A_HANDSHAKE_COMPLETE");
         transitionTo(DI_CHEO_PHAI_THA2B);
@@ -3647,9 +5042,10 @@ void updateCompetition(float dt) {
       }
       break;
     case DI_CHEO_PHAI_THA2B:
-      if(updateTha2BCoarseRightLineLatch()){
+      if(updateTha2BCoarseLineLatch()){
         moveCommand.active=false;stopRobot();
-        Serial.println("ACK,AUTO_THA2B_RIGHT_PAIR_EDGE_CAUGHT_DURING_COARSE_MOVE");
+        Serial.print("ACK,AUTO_THA2B_ROUTE_PAIR_EDGE_CAUGHT,");
+        Serial.println(tha2BUsesRightStopGroup()?"RIGHT":"LEFT");
         transitionTo(CAN_LINE_DOC_PHAI_THA2B);
       }else if(updateRelativeMove(dt)){
         Serial.println("ACK,AUTO_THA2B_COARSE_DISTANCE_DONE_START_PAIR_SEARCH");
@@ -3657,15 +5053,16 @@ void updateCompetition(float dt) {
       }
       break;
     case CAN_LINE_DOC_PHAI_THA2B:
-      if(updateAutoPickX(dt,true)){
+      if(updateAutoPickX(dt,tha2BUsesRightStopGroup())){
         xAligned=true;pointBPairLostSinceMs=0;
-        Serial.println("ACK,AUTO_THA2B_RIGHT_PAIR_ON_VERTICAL_LINE");
+        Serial.print("ACK,AUTO_THA2B_ROUTE_PAIR_ON_VERTICAL_LINE,");
+        Serial.println(tha2BUsesRightStopGroup()?"RIGHT":"LEFT");
         transitionTo(LUI_BAM_LINE_DOC_THA2B);
       }
       break;
     case LUI_BAM_LINE_DOC_THA2B:
-      if(!updateReverseKeepingRightPair(dt,THA2B_LINE_REVERSE_SPEED_MM_S)){
-        Serial.println("ACK,AUTO_THA2B_RIGHT_PAIR_LOST_REALIGN");
+      if(!updateReverseKeepingTha2BOuterPair(dt,THA2B_LINE_REVERSE_SPEED_MM_S)){
+        Serial.println("ACK,AUTO_THA2B_ROUTE_PAIR_LOST_REALIGN");
         transitionTo(CAN_LINE_DOC_PHAI_THA2B);
         break;
       }
@@ -3678,22 +5075,33 @@ void updateCompetition(float dt) {
         }
       }else tha2BHorizontalSinceMs=0;
       break;
-    case LUI_RA_LINE_NGANG_THA2B:
-      if(!updateReverseKeepingRightPair(dt,THA2B_LINE_CLEAR_SPEED_MM_S)){
-        Serial.println("ACK,AUTO_THA2B_RIGHT_PAIR_LOST_WHILE_CLEARING");
-        transitionTo(CAN_LINE_DOC_PHAI_THA2B);
+    case LUI_RA_LINE_NGANG_THA2B: {
+      // The right outside/middle pair can disappear at the trailing edge of
+      // the horizontal marker. Confirm the cleared marker before treating
+      // that expected loss as a lost vertical line and starting a new search.
+      const bool horizontalMarkerCleared=tha2BHorizontalMarkerCleared();
+      if(horizontalMarkerCleared){
+        // Stop in this same 10 ms control tick; do not drive an extra debounce
+        // distance after both horizontal references have reached white.
+        stopRobot();
+        Serial.println("ACK,AUTO_THA2B_BOTH_SIDE_GROUPS_JUST_CLEARED_STOP");
+#if ROBOCON_AFTER_BRIDGE_TEST_STOP_AFTER_SIDE_CLEAR
+        buzzer.beep(3);
+        Serial.println("ACK,AFTER_BRIDGE_TEST_COMPLETE_BOTH_SIDE_GROUPS_CLEARED");
+        transitionTo(FINISH);
+#else
+        transitionTo(DOI_DONE_THA2B);
+#endif
         break;
       }
-      if(tha2BHorizontalMarkerCleared()){
-        if(!tha2BHorizontalClearSinceMs)tha2BHorizontalClearSinceMs=millis();
-        if(millis()-tha2BHorizontalClearSinceMs>=
-           THA2B_HORIZONTAL_CLEAR_CONFIRM_MS){
-          stopRobot();
-          Serial.println("ACK,AUTO_THA2B_BOTH_SIDE_GROUPS_JUST_CLEARED_STOP");
-          transitionTo(DOI_DONE_THA2B);
-        }
-      }else tha2BHorizontalClearSinceMs=0;
+
+      tha2BHorizontalClearSinceMs=0;
+      if(!updateReverseKeepingTha2BOuterPair(dt,THA2B_LINE_CLEAR_SPEED_MM_S)){
+        Serial.println("ACK,AUTO_THA2B_ROUTE_PAIR_LOST_WHILE_CLEARING");
+        transitionTo(CAN_LINE_DOC_PHAI_THA2B);
+      }
       break;
+    }
     case DOI_DONE_THA2B:
       stopRobot();
       if(espDoneTha2B){
@@ -3785,153 +5193,227 @@ void printAutoTelemetrySnapshotStage() {
 }
 
 void printTelemetry() {
-  // During any armed AUTO operation, suppress the large periodic burst. A
-  // requested snapshot is emitted as one short record per loop iteration so
-  // Serial5 cannot starve the 100 Hz sensor/control loop.
+  // Armed AUTO keeps its existing on-request/silent policy.
   if(controlMode==CONTROL_AUTO&&armed){
+    telemetryStage=0;
     if(autoTelemetryMode==AUTO_TELEMETRY_ON_REQUEST)
       printAutoTelemetrySnapshotStage();
     else autoTelemetrySnapshotStage=0;
     return;
   }
-  if(millis()-lastTelemetryMs<TELEMETRY_PERIOD_MS)return;
-  lastTelemetryMs=millis();
-  if(DEBUG_TELEMETRY){
-    Serial.print("DBG,STATE=");Serial.print(stateName(state));
-    Serial.print(",V=");Serial.print(robotVx,1);Serial.print(',');Serial.print(robotVy,1);Serial.print(',');Serial.print(robotWz,3);
-    Serial.print(",WT=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].targetMmS,1);}
-    Serial.print(",WS=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].measuredMmS,1);}
-    Serial.print(",PWM=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].pwm);}
-    Serial.print(",ENC=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].count);}
-    Serial.print(",YAW=");Serial.print(currentYawDeg,2);Serial.print('/');Serial.print(targetYawDeg,2);Serial.print('/');Serial.print(shortestAngleError(targetYawDeg,currentYawDeg),2);
-    Serial.print(",CENTER=");Serial.print(centerLine.position,1);Serial.print('/');Serial.print(centerLine.valid);
-    Serial.print(",STOP=");Serial.print(stopLine.leftPosition,1);Serial.print('/');Serial.print(stopLine.rightPosition,1);
-    Serial.print(",FLOW=");Serial.print(flow.deltaX,1);Serial.print('/');Serial.print(flow.deltaY,1);Serial.print('/');Serial.print(flow.quality,0);Serial.print('/');Serial.print(flow.valid);
-    Serial.print(",TOF=");Serial.print(tofDistanceMm,1);
-    Serial.print(",POSE=");Serial.print(pose.x_mm,1);Serial.print('/');Serial.print(pose.y_mm,1);Serial.print('/');Serial.print(pose.yaw_deg,2);
-    Serial.print(",FAULT=");Serial.println(faultFlags);
-  }
 
-  if(testMode==TEST_CENTER_LINE){
-    Serial.print("LINE_CENTER_RAW");
-    for(uint8_t i=0;i<8;i++){Serial.print(',');Serial.print(centerLine.raw[i]);}
-    Serial.println();
-    Serial.print("LINE_CENTER_NORM");
-    for(uint8_t i=0;i<8;i++){Serial.print(',');Serial.print(centerLine.normalized[i]);}
-    Serial.print(',');Serial.print(centerLine.position,1);Serial.print(',');
-    Serial.print(centerLine.valid?1:0);Serial.print(',');
-    Serial.print(centerLine.activeCount);Serial.print(',');
-    Serial.println(static_cast<uint8_t>(centerLine.state));
-    if(calibrationActive&&calibrationCenterOnly)printCenterCalibrationTelemetry();
-  }else if(testMode==TEST_STOP_LINE){
-    Serial.print("LINE_STOP_RAW");
-    for(uint8_t i=0;i<6;i++){Serial.print(',');Serial.print(stopLine.raw[i]);}
-    Serial.println();
-    Serial.print("LINE_STOP_NORM");
-    for(uint8_t i=0;i<6;i++){Serial.print(',');Serial.print(stopLine.normalized[i]);}
-    Serial.print(',');Serial.print(stopLine.leftPosition,1);Serial.print(',');
-    Serial.print(stopLine.leftValid?1:0);Serial.print(',');
-    Serial.print(stopLine.rightPosition,1);Serial.print(',');
-    Serial.println(stopLine.rightValid?1:0);
-    Serial.print("LINE_HOLD_RAW,");Serial.print(stopLine.holdRaw[0]);
-    Serial.print(',');Serial.println(stopLine.holdRaw[1]);
-    Serial.print("LINE_HOLD_NORM,");Serial.print(stopLine.holdNormalized[0]);
-    Serial.print(',');Serial.println(stopLine.holdNormalized[1]);
-    if(calibrationActive&&calibrationStopOnly)printStopCalibrationTelemetry();
+  const uint32_t now=millis();
+  if(telemetryStage==0){
+    if(now-lastTelemetryMs<TELEMETRY_PERIOD_MS)return;
+    lastTelemetryMs=now;
+    lastTelemetryStageMs=0;
+    telemetryStage=1;
   }
+  if(lastTelemetryStageMs!=0&&
+     now-lastTelemetryStageMs<TELEMETRY_STAGE_GAP_MS)return;
+  lastTelemetryStageMs=now;
 
-  // RBT/1-compatible compact stream for the existing pid-tuner interface.
-  const float rpmFactor=60.0f/(PI*WHEEL_DIAMETER_MM);
-  Serial.print("TEL,");Serial.print(millis());
-  for(uint8_t i=0;i<4;i++){Serial.print(',');Serial.print(wheels[i].measuredMmS*rpmFactor,2);}
-  Serial.print(',');Serial.print(currentYawDeg,2);
-  Serial.print(',');Serial.print(centerLine.position/3500.0f,3);
-  Serial.println(",0.0"); // Battery input is not assigned in the supplied hardware map.
-  for(uint8_t i=0;i<4;i++){
-    Serial.print("WHEEL,");Serial.print(tunerWheelName(i));Serial.print(',');
-    Serial.print(wheelMmSToRpm(wheels[i].targetMmS),2);Serial.print(',');
-    Serial.print(wheelMmSToRpm(wheels[i].measuredMmS),2);Serial.print(',');
-    Serial.print(wheels[i].pwm);Serial.print(',');Serial.println(wheels[i].count);
-  }
-  Serial.print("POSE,");Serial.print(pose.x_mm,1);Serial.print(',');
-  Serial.print(pose.y_mm,1);Serial.print(',');Serial.print(pose.yaw_deg,2);
-  Serial.print(',');Serial.println(moveCommand.active?1:0);
-  Serial.print("SYS,");Serial.print(stateName(state));Serial.print(',');
-  Serial.print(faultFlags);Serial.print(',');Serial.print(armed?1:0);Serial.print(',');
-  Serial.print(static_cast<uint8_t>(testMode));Serial.print(',');
-  Serial.print(controlMode==CONTROL_AUTO?"AUTO":"MANUAL");Serial.print(',');
-  Serial.print(selectedField==FIELD_BLUE?"BLUE":"RED");Serial.print(',');
-  Serial.println(softwareEStopLatched?1:0);
-  Serial.print("HDG,");Serial.print(currentYawDeg,2);Serial.print(',');
-  Serial.print(targetYawDeg,2);Serial.print(',');
-  Serial.print(shortestAngleError(targetYawDeg,currentYawDeg),2);Serial.print(',');
-  Serial.print(bnoValid?1:0);Serial.print(',');Serial.println(bnoInitialized?1:0);
-  Serial.print("TILT,");Serial.print(currentRollDeg,2);Serial.print(',');
-  Serial.print(currentPitchDeg,2);Serial.print(',');
-  Serial.print(bridgeRelativeTiltDeg,2);Serial.print(',');
-  Serial.print(static_cast<uint8_t>(bridgeSlopePhase));Serial.print(',');
-  Serial.println(bridgeSlopeAxis);
-  Serial.print("TOF,");Serial.print(tofDistanceMm,1);Serial.print(',');
-  Serial.print(tofValid?1:0);Serial.print(',');Serial.print(TOF_TARGET_MM);Serial.print(',');
-  Serial.println(TOF_TARGET_MM-tofDistanceMm,1);
-  Serial.print("TOFI,");Serial.print(tofInitModeStatus);Serial.print(',');
-  Serial.print(tofInitBudgetStatus);Serial.print(',');Serial.print(tofInitStartStatus);
-  Serial.print(',');Serial.println(tofInitialized?1:0);
-  Serial.print("STOP6");
-  for(uint8_t i=0;i<6;i++){Serial.print(',');Serial.print(stopLine.normalized[i]);}
-  Serial.println();
-  Serial.print("HOLD2,");Serial.print(stopLine.holdNormalized[0]);
-  Serial.print(',');Serial.println(stopLine.holdNormalized[1]);
-  Serial.print("AUTO,");Serial.print(rightAutoCounter.count);Serial.print(',');
-  Serial.print(leftAutoCounter.count);Serial.print(',');Serial.print(bridgeAutoCounter.count);
-  Serial.print(',');Serial.print(xAligned?1:0);Serial.print(',');Serial.print(yAligned?1:0);
-  Serial.print(',');Serial.print(lastEspCommand);Serial.print(',');Serial.print(lastEspResponse);
-  Serial.print(',');Serial.print(bridgeCrossCount);Serial.print(',');
-  Serial.println(BRIDGE_STOP_CROSS_TARGET);
-  printAutoMechanismStatus();
-  printMechanismTelemetryStatus();
-  if(state==DI_SANG_TRAI_A||state==BU_TAM_A||
-     state==DI_SANG_TRAI_B||state==BU_TAM_B||
-     state==CAN_YAW_B||state==CAN_B||
-     state==CAN_PHAI_LINE_B_E18||state==TIEN_E18_70){
-    const bool rightGroup=(state==DI_SANG_TRAI_A||state==BU_TAM_A)
-                            ?selectedFieldUsesRightStopGroup()
-                            :secondPickUsesRightStopGroup();
-    const uint8_t offset=rightGroup?3:0;
-    Serial.print("PICK_SCAN,");Serial.print(stateName(state));Serial.print(',');
-    Serial.print(rightGroup?"RIGHT":"LEFT");Serial.print(',');
-    Serial.print(stopLine.normalized[offset]);Serial.print(',');
-    Serial.print(stopLine.normalized[offset+1]);Serial.print(',');
-    Serial.print(stopLine.normalized[offset+2]);Serial.print(',');
-    Serial.print(rightGroup?stopLine.rightPosition:stopLine.leftPosition,1);
-    Serial.print(',');Serial.print(stopGroupActiveCount(offset));
-    Serial.print(',');Serial.println(robotVy,2);
-    if(state==CAN_PHAI_LINE_B_E18||state==TIEN_E18_70){
-      Serial.print("POST_E18,");Serial.print(postBridgeCoarseMoveDone?1:0);
-      Serial.print(',');Serial.print(xAligned?1:0);
-      Serial.print(',');Serial.print(pointBRequiredSensorsOnLine(rightGroup)?1:0);
-      Serial.print(',');Serial.println(espE18BothDetected?1:0);
+  switch(telemetryStage){
+    case 1:
+      if(DEBUG_TELEMETRY){
+        Serial.print("DBG,STATE=");Serial.print(stateName(state));
+        Serial.print(",V=");Serial.print(robotVx,1);Serial.print(',');Serial.print(robotVy,1);Serial.print(',');Serial.print(robotWz,3);
+        Serial.print(",WT=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].targetMmS,1);}
+        Serial.print(",WS=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].measuredMmS,1);}
+        Serial.print(",PWM=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].pwm);}
+        Serial.print(",ENC=");for(uint8_t i=0;i<4;i++){if(i)Serial.print('/');Serial.print(wheels[i].count);}
+        Serial.print(",YAW=");Serial.print(currentYawDeg,2);Serial.print('/');Serial.print(targetYawDeg,2);Serial.print('/');Serial.print(shortestAngleError(targetYawDeg,currentYawDeg),2);
+        Serial.print(",CENTER=");Serial.print(centerLine.position,1);Serial.print('/');Serial.print(centerLine.valid);
+        Serial.print(",STOP=");Serial.print(stopLine.leftPosition,1);Serial.print('/');Serial.print(stopLine.rightPosition,1);
+        Serial.print(",FLOW=");Serial.print(flow.deltaX,1);Serial.print('/');Serial.print(flow.deltaY,1);Serial.print('/');Serial.print(flow.quality,0);Serial.print('/');Serial.print(flow.valid);
+        Serial.print(",TOF=");Serial.print(tofDistanceMm,1);
+        Serial.print(",POSE=");Serial.print(pose.x_mm,1);Serial.print('/');Serial.print(pose.y_mm,1);Serial.print('/');Serial.print(pose.yaw_deg,2);
+        Serial.print(",FAULT=");Serial.println(faultFlags);
+      }
+      break;
+
+    case 2:
+      if(testMode==TEST_CENTER_LINE){
+        Serial.print("LINE_CENTER_RAW");
+        for(uint8_t i=0;i<8;i++){Serial.print(',');Serial.print(centerLine.raw[i]);}
+        Serial.println();
+        Serial.print("LINE_CENTER_NORM");
+        for(uint8_t i=0;i<8;i++){Serial.print(',');Serial.print(centerLine.normalized[i]);}
+        Serial.print(',');Serial.print(centerLine.position,1);Serial.print(',');
+        Serial.print(centerLine.valid?1:0);Serial.print(',');
+        Serial.print(centerLine.activeCount);Serial.print(',');
+        Serial.println(static_cast<uint8_t>(centerLine.state));
+        if(calibrationActive&&calibrationCenterOnly)printCenterCalibrationTelemetry();
+      }else if(testMode==TEST_STOP_LINE){
+        Serial.print("LINE_STOP_RAW");
+        for(uint8_t i=0;i<6;i++){Serial.print(',');Serial.print(stopLine.raw[i]);}
+        Serial.println();
+        Serial.print("LINE_STOP_NORM");
+        for(uint8_t i=0;i<6;i++){Serial.print(',');Serial.print(stopLine.normalized[i]);}
+        Serial.print(',');Serial.print(stopLine.leftPosition,1);Serial.print(',');
+        Serial.print(stopLine.leftValid?1:0);Serial.print(',');
+        Serial.print(stopLine.rightPosition,1);Serial.print(',');
+        Serial.println(stopLine.rightValid?1:0);
+        Serial.print("LINE_HOLD_RAW,");Serial.print(stopLine.holdRaw[0]);
+        Serial.print(',');Serial.println(stopLine.holdRaw[1]);
+        Serial.print("LINE_HOLD_NORM,");Serial.print(stopLine.holdNormalized[0]);
+        Serial.print(',');Serial.println(stopLine.holdNormalized[1]);
+        if(calibrationActive&&calibrationStopOnly)printStopCalibrationTelemetry();
+      }
+      break;
+
+    case 3: {
+      const float rpmFactor=60.0f/(PI*WHEEL_DIAMETER_MM);
+      Serial.print("TEL,");Serial.print(millis());
+      for(uint8_t i=0;i<4;i++){Serial.print(',');Serial.print(wheels[i].measuredMmS*rpmFactor,2);}
+      Serial.print(',');Serial.print(currentYawDeg,2);
+      Serial.print(',');Serial.print(centerLine.position/3500.0f,3);
+      Serial.println(",0.0");
+      break;
     }
-  }
-  if(state==DI_SANG_C||state==CHAY_LEN_XANH||state==DI_LEN_DEM_LINE){
-    Serial.print("BRIDGE_SCAN,");Serial.print(stateName(state));Serial.print(',');
-    Serial.print(bridgeAutoCounter.count);Serial.print(',');
-    Serial.print(centerLine.activeCount);Serial.print(',');
-    Serial.print(centerLine.cross?1:0);Serial.print(',');
-    Serial.print(centerLine.valid?1:0);Serial.print(',');
-    Serial.print(centerLine.position,1);
-    for(uint8_t i=0;i<8;i++){
-      Serial.print(',');Serial.print(centerLine.normalized[i]);
+
+    case 4:
+    case 5:
+    case 6:
+    case 7: {
+      const uint8_t i=telemetryStage-4;
+      Serial.print("WHEEL,");Serial.print(tunerWheelName(i));Serial.print(',');
+      Serial.print(wheelMmSToRpm(wheels[i].targetMmS),2);Serial.print(',');
+      Serial.print(wheelMmSToRpm(wheels[i].measuredMmS),2);Serial.print(',');
+      Serial.print(wheels[i].pwm);Serial.print(',');Serial.println(wheels[i].count);
+      break;
     }
-    Serial.println();
+
+    case 8:
+      Serial.print("POSE,");Serial.print(pose.x_mm,1);Serial.print(',');
+      Serial.print(pose.y_mm,1);Serial.print(',');Serial.print(pose.yaw_deg,2);
+      Serial.print(',');Serial.println(moveCommand.active?1:0);
+      break;
+
+    case 9:
+      Serial.print("SYS,");Serial.print(stateName(state));Serial.print(',');
+      Serial.print(faultFlags);Serial.print(',');Serial.print(armed?1:0);Serial.print(',');
+      Serial.print(static_cast<uint8_t>(testMode));Serial.print(',');
+      Serial.print(controlMode==CONTROL_AUTO?"AUTO":"MANUAL");Serial.print(',');
+      Serial.print(selectedField==FIELD_BLUE?"BLUE":"RED");Serial.print(',');
+      Serial.println(softwareEStopLatched?1:0);
+      break;
+
+    case 10:
+      Serial.print("HDG,");Serial.print(currentYawDeg,2);Serial.print(',');
+      Serial.print(targetYawDeg,2);Serial.print(',');
+      Serial.print(shortestAngleError(targetYawDeg,currentYawDeg),2);Serial.print(',');
+      Serial.print(bnoValid?1:0);Serial.print(',');Serial.println(bnoInitialized?1:0);
+      break;
+
+    case 11:
+      Serial.print("TILT,");Serial.print(currentRollDeg,2);Serial.print(',');
+      Serial.print(currentPitchDeg,2);Serial.print(',');
+      Serial.print(bridgeRelativeTiltDeg,2);Serial.print(',');
+      Serial.print(static_cast<uint8_t>(bridgeSlopePhase));Serial.print(',');
+      Serial.println(bridgeSlopeAxis);
+      break;
+
+    case 12:
+      Serial.print("TOF,");Serial.print(tofDistanceMm,1);Serial.print(',');
+      Serial.print(tofValid?1:0);Serial.print(',');Serial.print(TOF_TARGET_MM);Serial.print(',');
+      Serial.println(TOF_TARGET_MM-tofDistanceMm,1);
+      break;
+
+    case 13:
+      Serial.print("TOFI,");Serial.print(tofInitModeStatus);Serial.print(',');
+      Serial.print(tofInitBudgetStatus);Serial.print(',');Serial.print(tofInitStartStatus);
+      Serial.print(',');Serial.println(tofInitialized?1:0);
+      break;
+
+    case 14:
+      Serial.print("STOP6");
+      for(uint8_t i=0;i<6;i++){Serial.print(',');Serial.print(stopLine.normalized[i]);}
+      Serial.println();
+      Serial.print("HOLD2,");Serial.print(stopLine.holdNormalized[0]);
+      Serial.print(',');Serial.println(stopLine.holdNormalized[1]);
+      break;
+
+    case 15:
+      Serial.print("AUTO,");Serial.print(rightAutoCounter.count);Serial.print(',');
+      Serial.print(leftAutoCounter.count);Serial.print(',');Serial.print(bridgeAutoCounter.count);
+      Serial.print(',');Serial.print(xAligned?1:0);Serial.print(',');Serial.print(yAligned?1:0);
+      Serial.print(',');Serial.print(lastEspCommand);Serial.print(',');Serial.print(lastEspResponse);
+      Serial.print(',');Serial.print(bridgeCrossCount);Serial.print(',');
+      Serial.println(BRIDGE_STOP_CROSS_TARGET);
+      break;
+
+    case 16:
+      printAutoMechanismStatus();
+      break;
+
+    case 17:
+      printMechanismTelemetryStatus();
+      break;
+
+    case 18:
+      if(state==DI_SANG_TRAI_A||state==BU_TAM_A||
+         state==DI_SANG_TRAI_B||state==BU_TAM_B||
+         state==CAN_YAW_B||state==CAN_B||
+         state==BACKUP_C_ALIGN||state==BACKUP_C_VERIFY||
+         state==CAN_PHAI_LINE_B_E18||state==TIEN_E18_70){
+        const bool rightGroup=
+            (state==DI_SANG_TRAI_A||state==BU_TAM_A)
+                ?selectedFieldUsesRightStopGroup()
+                :((state==BACKUP_C_ALIGN||state==BACKUP_C_VERIFY)
+                    ?backupCUsesRightStopGroup()
+                    :secondPickUsesRightStopGroup());
+        const uint8_t offset=rightGroup?3:0;
+        Serial.print("PICK_SCAN,");Serial.print(stateName(state));Serial.print(',');
+        Serial.print(rightGroup?"RIGHT":"LEFT");Serial.print(',');
+        Serial.print(stopLine.normalized[offset]);Serial.print(',');
+        Serial.print(stopLine.normalized[offset+1]);Serial.print(',');
+        Serial.print(stopLine.normalized[offset+2]);Serial.print(',');
+        Serial.print(rightGroup?stopLine.rightPosition:stopLine.leftPosition,1);
+        Serial.print(',');Serial.print(stopGroupActiveCount(offset));
+        Serial.print(',');Serial.print(robotVy,2);
+        Serial.print(',');Serial.print(robotVx,2);
+        Serial.print(',');Serial.print(static_cast<uint8_t>(stationAlignPulseAxis));
+        Serial.print(',');Serial.println(static_cast<uint8_t>(stationAlignPulsePhase));
+        if(state==CAN_PHAI_LINE_B_E18||state==TIEN_E18_70){
+          Serial.print("POST_E18,");Serial.print(postBridgeCoarseMoveDone?1:0);
+          Serial.print(',');Serial.print(xAligned?1:0);
+          Serial.print(',');Serial.print(postBridgeOuterPairOnLine(rightGroup)?1:0);
+          Serial.print(',');Serial.println(espE18BothDetected?1:0);
+        }
+      }else if(state==DI_SANG_C||state==CHAY_LEN_XANH||state==DI_LEN_DEM_LINE){
+        Serial.print("BRIDGE_SCAN,");Serial.print(stateName(state));Serial.print(',');
+        Serial.print(bridgeAutoCounter.count);Serial.print(',');
+        Serial.print(centerLine.activeCount);Serial.print(',');
+        Serial.print(centerLine.cross?1:0);Serial.print(',');
+        Serial.print(centerLine.valid?1:0);Serial.print(',');
+        Serial.print(centerLine.position,1);
+        for(uint8_t i=0;i<8;i++){
+          Serial.print(',');Serial.print(centerLine.normalized[i]);
+        }
+        Serial.println();
+      }
+      break;
+
+    case 19: {
+      bool motionActive=moveCommand.active||fabsf(robotVx)>0.5f||
+          fabsf(robotVy)>0.5f||fabsf(robotWz)>0.002f;
+      for(uint8_t i=0;i<4;i++)
+        motionActive=motionActive||fabsf(wheels[i].targetMmS)>0.5f;
+      Serial.print("MOTION,");Serial.print(millis());Serial.print(',');
+      Serial.print(motionActive?1:0);Serial.print(',');
+      Serial.print(robotVx,2);Serial.print(',');Serial.print(robotVy,2);Serial.print(',');
+      Serial.print(robotWz,4);Serial.print(',');Serial.print(positionErrorX,2);Serial.print(',');
+      Serial.println(positionErrorY,2);
+      telemetryStage=0;
+      return;
+    }
+
+    default:
+      telemetryStage=0;
+      return;
   }
-  bool motionActive=moveCommand.active||fabsf(robotVx)>0.5f||fabsf(robotVy)>0.5f||fabsf(robotWz)>0.002f;
-  for(uint8_t i=0;i<4;i++)motionActive=motionActive||fabsf(wheels[i].targetMmS)>0.5f;
-  Serial.print("MOTION,");Serial.print(millis());Serial.print(',');
-  Serial.print(motionActive?1:0);Serial.print(',');
-  Serial.print(robotVx,2);Serial.print(',');Serial.print(robotVy,2);Serial.print(',');
-  Serial.print(robotWz,4);Serial.print(',');Serial.print(positionErrorX,2);Serial.print(',');
-  Serial.println(positionErrorY,2);
+  ++telemetryStage;
 }
 
 // ============================================================
@@ -3940,13 +5422,14 @@ void printTelemetry() {
 
 void confirmPhysicalField(FieldSide field) {
   selectedField = field;
+  physicalStartPendingForFieldSync = false;
+  beginEspFieldSync();
   buzzer.beep(field == FIELD_RED ? 2 : 3);
   Serial.print("ACK,FIELD,PHYSICAL,");
   Serial.println(field == FIELD_RED ? "RED" : "BLUE");
 }
 
 void startAutoFromPhysicalButton() {
-  buzzer.beep(1);
   if (pendingPhysicalFieldClicks == 1) {
     pendingPhysicalFieldClicks = 0;
     confirmPhysicalField(FIELD_RED);
@@ -3971,7 +5454,14 @@ void startAutoFromPhysicalButton() {
     setFault(FAULT_CONFIG, "START_CONFIG_LOCKED");
     return;
   }
+  if (!fieldReadyForAutoStart()) {
+    physicalStartPendingForFieldSync = true;
+    Serial.println("SAFETY,PHYSICAL_START_QUEUED_WAIT_ESP_FIELD");
+    return;
+  }
 
+  physicalStartPendingForFieldSync = false;
+  buzzer.beep(1);
   controlMode = CONTROL_AUTO;
   supervisedAutoRun = false;
   testMode = TEST_NONE;
@@ -3980,14 +5470,16 @@ void startAutoFromPhysicalButton() {
   resetPose();
   competitionHeadingDeg = currentYawDeg;
   targetYawDeg = competitionHeadingDeg;
-#if ROBOCON_AFTER_BRIDGE_TEST_BUILD
+#if ROBOCON_AFTER_BRIDGE_TEST_BUILD || ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
   transitionTo(DI_LEN_DEM_LINE);
 #else
   transitionTo(DOI_HOME_A_READY);
 #endif
   printAutoStartConfiguration("PHYSICAL_BUTTON_PIN34");
   Serial.println("SAFETY,AUTO_STARTED");
-#if ROBOCON_AFTER_BRIDGE_TEST_BUILD
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+  Serial.println("ACK,PHYSICAL_START_BRIDGE_LINE_1150_TEST");
+#elif ROBOCON_AFTER_BRIDGE_TEST_BUILD
   Serial.println("ACK,PHYSICAL_START_AFTER_BRIDGE_TEST");
 #endif
 }
@@ -3996,6 +5488,13 @@ void updatePhysicalControls() {
   buzzer.update();
   if (!PHYSICAL_CONTROL_BUTTONS_ENABLED) return;
   const uint32_t now = millis();
+
+  if(physicalStartPendingForFieldSync&&espFieldSynced){
+    physicalStartPendingForFieldSync=false;
+    Serial.println("SAFETY,PHYSICAL_START_RELEASED_ESP_FIELD_SYNCED");
+    startAutoFromPhysicalButton();
+    return;
+  }
 
   if (pendingPhysicalFieldClicks == 1 &&
       now - lastPhysicalFieldClickMs >= PHYSICAL_FIELD_DOUBLE_CLICK_MS) {
@@ -4027,6 +5526,8 @@ void updatePhysicalControls() {
 
 void setup() {
   beginUsbCommandStream();
+  backupRouteConfigLoadedFromEeprom=BackupRoute::load(backupRouteConfig);
+  backupRouteConfigDirty=false;
   Serial.setRX(TELEMETRY_RX_PIN);
   Serial.setTX(TELEMETRY_TX_PIN);
   Serial.begin(TELEMETRY_BAUD);
@@ -4049,11 +5550,14 @@ void setup() {
   analogWriteResolution(8);
   for(uint8_t i=0;i<4;i++){
     WheelControl &wheel=wheels[i];
-    pinMode(wheel.rpwm,OUTPUT);pinMode(wheel.lpwm,OUTPUT);
+    pinMode(wheel.rpwm,OUTPUT);pinMode(wheel.lpwm,OUTPUT);     
     analogWriteFrequency(wheel.rpwm,PWM_FREQUENCY_HZ);
     analogWriteFrequency(wheel.lpwm,PWM_FREQUENCY_HZ);
     wheel.pid=PID(WHEEL_KP[i],WHEEL_KI[i],WHEEL_KD[i],WHEEL_INTEGRAL_LIMIT);
-    wheel.kff=WHEEL_KFF[i];wheel.deadzone=WHEEL_DEADZONE_PWM[i];
+    wheel.kffPositive=WHEEL_KFF_POSITIVE[i];
+    wheel.kffNegative=WHEEL_KFF_NEGATIVE[i];
+    wheel.deadzonePositive=WHEEL_DEADZONE_PWM_POSITIVE[i];
+    wheel.deadzoneNegative=WHEEL_DEADZONE_PWM_NEGATIVE[i];
     wheel.previousCount=wheel.encoder->read()*wheel.encoderSign;
     wheel.lastEncoderMotionMs=millis();writeMotor(wheel,0);
   }
@@ -4089,10 +5593,11 @@ void setup() {
                    budgetStatus==VL53LX_ERROR_NONE&&
                    startStatus==VL53LX_ERROR_NONE;
   }
-
   resetPose();lastControlUs=micros();
   Serial.println("ROBOCON_MECANUM_BOOT");
-#if ROBOCON_AFTER_BRIDGE_TEST_BUILD
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+  Serial.println("BUILD=BRIDGE_LINE_1150_TEST");
+#elif ROBOCON_AFTER_BRIDGE_TEST_BUILD
   Serial.println("BUILD=AFTER_BRIDGE_TEST");
 #else
   Serial.println("BUILD=COMPETITION");
@@ -4103,6 +5608,9 @@ void setup() {
     Serial.print("Serial6,TX24,RX25,BAUD=");Serial.println(ESP32_BAUD);
   }else Serial.println("DISABLED_PIN_CONFLICT");
   Serial.println("PID_CONFIG=ROBOTCONFIG_H_RAM_ONLY");
+  Serial.print("BACKUP_C_CONFIG=");
+  Serial.print(backupRouteConfigLoadedFromEeprom?"EEPROM":"DEFAULT");
+  Serial.print(",ROUTE=");Serial.println(backupCRouteEnabled()?"C":"AB");
   Serial.print("CONFIG_VERIFIED=");Serial.println(HARDWARE_CONFIG_VERIFIED);
   Serial.print("BNO085=");Serial.print(bnoInitialized);Serial.print(",TOF=");Serial.println(tofInitialized);
   if(!HARDWARE_CONFIG_VERIFIED||!dimensionsValid())
@@ -4111,6 +5619,8 @@ void setup() {
 
 void loop() {
   updateUsbCommands();updateEspProtocol();updateOpticalFlow();updateBno085();updateTof();
+  updateEspFieldSync();
+  updateBridgeBResumeHandshake();
 
   updatePhysicalControls();
 
@@ -4127,6 +5637,9 @@ void loop() {
     updateTestMode(dt);
     if(testMode==TEST_NONE)updateCompetition(dt);
     updateWheelSpeedPid(dt);
+#if ROBOCON_BRIDGE_LINE_1150_TEST_BUILD
+    updateBridgeLine1150Debug();
+#endif
   }
   printTelemetry();
 }

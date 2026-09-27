@@ -29,9 +29,41 @@ Chuỗi van dùng `millis()`, không dùng `delay(700)`. Trong thời gian chờ
 | Step/Dir A | GPIO1 / GPIO2 | Driver stepper A |
 | Step/Dir B | GPIO45 / GPIO48 | Driver stepper B |
 | HOME A/B | GPIO36 / GPIO37 | Công tắc active LOW |
-| E18 A/B | GPIO11 / GPIO18 | Cảm biến active LOW |
+| E18 A/B | GPIO17 / GPIO18 | Cảm biến active LOW |
+| Nút van | GPIO11 | Nút thường hở nối GND, INPUT_PULLUP |
+| Nút HOME B rồi A | GPIO12 | Nút thường hở nối GND, INPUT_PULLUP |
 
 Firmware chỉ chấp nhận PCF8574 đúng địa chỉ `0x20`. Khi khởi động, `pcfState = 0xFF`, tức P0-P7 đều HIGH và mọi cuộn van đều mất điện. Nếu không tìm thấy PCF8574, cơ cấu không bắt đầu HOME/AUTO và UART báo `ERROR_PCF8574`.
+
+## Hai nút điều khiển tại ESP32
+
+Các nút vẫn hoạt động khi USB/telemetry không kết nối. Một đầu nút nối GPIO,
+đầu còn lại nối GND: bình thường HIGH, nhấn LOW. Chống dội 30 ms; nút bị giữ
+khi bật nguồn hoặc lúc STOP phải được nhả ra rồi nhấn lại mới có lệnh mới.
+
+- **GPIO11 nhấn một lần:** đóng cả bốn van bằng cách bật P4/P5/P6/P7 và tắt
+  P0/P1/P2/P3 (`enabledMask = 0xF0`, trạng thái PCF sau chuyển mạch là `0x0F`).
+  Firmware vẫn mở cửa sổ 400 ms để nhận lần nhấn thứ hai. Nếu cơ cấu đang chạy,
+  dừng cả chu trình và motor để bước kế tiếp không ghi đè trạng thái đóng.
+  UART/USB báo `ACK,BUTTON11,P4_P7_ON_CLOSED`.
+- **GPIO11 nhấn nhanh hai lần trong 400 ms:** mở cả bốn van bằng cách bật
+  P0/P1/P2/P3 và tắt P4/P5/P6/P7
+  trong cùng một mask (`pcfState = 0xF0`), sau deadtime 50 ms. Khi cơ cấu bận
+  hoặc có fault, từ chối bật van. UART/USB báo
+  `ACK,BUTTON11,P0_P3_ON_REQUESTED` khi nhận yêu cầu chuyển van.
+- **GPIO12 nhấn một lần:** khi cơ cấu rảnh và không có fault, giữ A đứng yên,
+  cho B chạy về HOME37. B chạm công tắc thì dừng xung ngay, xác nhận ổn định
+  25 ms rồi đặt B=0; sau đó mới kéo A về HOME36 và đặt A=0. Cả hai trục dùng
+  8000 step/s, gia tốc 5500 step/s²; timeout toàn chu trình 45 giây. Trục đã
+  chạm HOME không chạy thêm. Báo `ACK,BUTTON12,HOME_B_THEN_A,8000,5500` khi
+  bắt đầu và `HOME,STATUS,...` khi kết thúc. Nhấn khi bận bị từ chối, không xếp
+  hàng để tự chạy sau. Lệnh UART `STOP` vẫn được xử lý trong khi HOME.
+
+Chỉnh chân nút, thời gian nhấn đôi và tốc độ HOME ở `include/HardwareConfig.h`:
+`VALVE_BUTTON_PIN`, `HOME_BUTTON_PIN`, `BUTTON_DOUBLE_CLICK_MS`,
+`BUTTON_HOME_SPEED_STEPS_S`, `BUTTON_HOME_ACCEL_STEPS_S2`, `BUTTON_HOME_TIMEOUT_MS`.
+HOME khi bật nguồn và lệnh UART HOME vẫn dùng cấu hình HOME thông thường;
+chuỗi B trước A tốc độ 8000/5500 áp dụng riêng cho GPIO12.
 
 ## Ghép bốn van hai đầu
 
@@ -53,27 +85,29 @@ Các hàm chính trong `ValveController`:
 
 ## Chuỗi AUTO của van
 
+Tại cả hai MAP, `POINT_A` hạ sâu hơn `POINT_B`: A/B hạ `610/545 mm` tại
+`POINT_A` và `520/480 mm` tại `POINT_B`, tính từ `READY_HOME_A`. MAP đỏ và MAP
+xanh có bộ hằng số riêng trong `include/HardwareConfig.h`: tiền tố
+`RED_POINT_*` và `BLUE_POINT_*`, nên có thể hiệu chỉnh độc lập về sau.
+
 | Lệnh | Bước 1 | Chờ | Bước 2 | Chờ | Phản hồi |
 | --- | --- | ---: | --- | ---: | --- |
-| `POINT_A` | P2 ON, P5 OFF | 700 ms | P3 ON, P4 OFF | 700 ms | `DONE_POINT_A` |
-| `POINT_B` | P0 ON, P7 OFF | 700 ms | P1 ON, P6 OFF | 700 ms | `DONE_POINT_B` |
+| `POINT_A` | P2 và P3 ON đồng thời trong một byte PCF | 50 ms deadtime an toàn | Nâng A/B về HOME_A ngay | - | `DONE_POINT_A` |
+| `POINT_B` | P0 và P1 ON đồng thời trong một byte PCF | 50 ms deadtime an toàn | A/B cùng về READY_HOME_A; A nâng 1700 mm, B nâng 850 mm rồi giữ | - | `DONE_POINT_B` khi pha nâng tầng 1 bắt đầu |
+| `BRIDGE_STABLE` | Không đổi van | - | A giữ ở 1700 mm, chỉ B nâng nốt 850 mm | - | `DONE_BRIDGE_B` |
 | `THA_2A` | P1 OFF, P6 ON | 700 ms | P3 OFF, P4 ON | 700 ms | `DONE_THA_2A` |
-| `THA_2B` | P2 OFF, P5 ON | 350 ms | P0 OFF, P7 ON | 700 ms | `DONE_THA_2B` |
+| `THA_2B` MAP đỏ | P2 OFF, P5 ON | 350 ms | P0 OFF, P7 ON | 700 ms | `DONE_THA_2B` |
+| `THA_2B` MAP xanh | P0 OFF, P7 ON | 350 ms | P2 OFF, P5 ON | 700 ms | `DONE_THA_2B` |
 
-`MechanismController::updateValveSequence()` thực hiện lần lượt các trạng thái switch, chờ deadtime, chờ 700 ms, switch đầu thứ hai và hoàn tất. Lệnh chuyển động khác trong lúc cơ cấu bận nhận phản hồi `BUSY`. `STOP` luôn hủy chuỗi, dừng stepper, ghi `0xFF` và phản hồi `STOPPED`.
-
+Tại `POINT_A` và `POINT_B`, hai cuộn yêu cầu được chuyển bằng một mask PCF8574 nên cùng kích sau deadtime an toàn 50 ms; không còn khoảng chờ 700 ms giữa hai van. Tại `POINT_B`, A và B trước tiên cùng nâng từ vị trí đang hạ về đúng `READY_HOME_A`. Sau khi cả hai tới READY, A/B cùng tốc độ nâng 850 mm; B dừng giữ, còn A nâng tiếp 850 mm để đạt tổng 1700 mm. ESP32 gửi `DONE_POINT_B` ngay khi pha 850 mm đầu bắt đầu để Teensy chạy qua line lên cầu song song. Khi BNO085 trên Teensy xác nhận robot đã xuống hết dốc và mặt phẳng ổn định 500 ms, Teensy gửi `BRIDGE_STABLE`; ESP32 giữ A ở 1700 mm, nâng riêng B nốt 850 mm và trả `DONE_BRIDGE_B`. Teensy vẫn được căn line sau cầu trong lúc B nâng, nhưng bắt buộc chờ `DONE_BRIDGE_B` trước khi gửi `THA_2A`. Các pha nâng dùng giới hạn 9000 step/s và gia tốc 6000 step/s². `MechanismController::updateValveSequence()` vẫn xử lý không chặn cho `THA_2A` và `THA_2B`. Lệnh chuyển động khác trong lúc cơ cấu bận nhận phản hồi `BUSY`. `STOP` luôn hủy chuỗi, dừng stepper, ghi `0xFF` và phản hồi `STOPPED`.
 Sau chuỗi van `THA_2B`, ESP32 trả `DONE_THA_2B` ngay để Teensy bắt đầu chạy robot. ESP32 cho riêng động cơ B hạ trước 400 mm, sau đó A và B cùng chạy với tốc độ 8000 step/s và gia tốc 5000 step/s² cho tới khi HOME37 ổn định 25 ms. Lúc đó B được đặt zero và riêng A đổi chiều kéo về HOME36. Nếu HOME37 tác động sớm trong 400 mm đầu, firmware dừng B ngay và bỏ qua pha hạ đồng bộ để bảo vệ cơ cấu. Toàn bộ quá trình không chặn UART/E18/STOP và có timeout 45 giây.
 
-Phía Teensy, sau `DONE_THA_2B`, robot giữ heading và thực hiện một vector chéo duy nhất: lùi 3000 mm (`-X`) đồng thời đi phải 2000 mm (`-Y`), giới hạn tốc độ tổng 500 mm/s, rồi chuyển sang `FINISH`.
+Phía Teensy, sau `DONE_THA_2B`, robot giữ heading và thực hiện một vector chéo duy nhất: lùi 3000 mm (`-X`) đồng thời đi phải 2000 mm (`-Y`), giới hạn tốc độ tổng 1200 mm/s, rồi chuyển sang `FINISH`.
 
 Log kiểm tra ví dụ:
 
 ```text
-[POINT_A] P2 ON, P5 OFF
-[POINT_A] Wait 700 ms
-[POINT_A] P3 ON, P4 OFF
-[POINT_A] Wait 700 ms
-[POINT_A] DONE
+[POINT_A] P2 + P3 ON TOGETHER
 DONE_POINT_A
 ```
 

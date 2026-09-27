@@ -14,7 +14,9 @@ inline uint32_t millis() { return static_cast<uint32_t>(mockMicros / 1000); }
 inline unsigned long micros() { return static_cast<unsigned long>(mockMicros); }
 inline void delayMicroseconds(unsigned int us) { mockMicros += us; }
 inline int mockDigitalPinState[64] = {};
-inline void digitalWrite(int, int) {}
+inline void digitalWrite(int pin, int value) {
+  if (pin >= 0 && pin < 64) mockDigitalPinState[pin] = value;
+}
 inline int digitalRead(int pin) {
   return pin >= 0 && pin < 64 ? mockDigitalPinState[pin] : LOW;
 }
